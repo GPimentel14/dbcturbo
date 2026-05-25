@@ -1,0 +1,37 @@
+Package: dbcturbo
+Type: Package
+Title: High-Performance Streaming Reader for DATASUS DBC Files
+Version: 0.1.0
+Date: 2026-05-24
+Authors@R: c(
+    person("Gumercindo", "Pimentel Peralta", email = "gumercindopimentel@gmail.com", 
+           role = c("aut", "cre"), comment = c(ORCID = "0000-0002-5896-3171")),
+    person("Mark", "Adler", role = "ctb",
+           comment = "Author of blast.c (PKWare implode decompressor)"),
+    person("Daniela", "Petruzalek", role = "ctb",
+           comment = "Author of read.dbc, dbc2dbf.c"),
+    person("Pablo", "Fonseca", role = "ctb",
+           comment = "Author of blast-dbf"))
+Description: A modern, memory-efficient R package for reading and converting
+    DBC files produced by the Brazilian Ministry of Health's DATASUS system.
+    DBC files are DBF databases compressed with the PKWare 'implode' algorithm.
+    Unlike read.dbc, this package processes files in streaming mode, never
+    loading the full dataset into RAM. It can export directly to CSV or DBF,
+    and exposes a low-level C API for integration with Arrow, data.table, or
+    other high-performance frameworks.
+License: AGPL-3
+URL: https://github.com/GPimentel14/dbcturbo
+BugReports: https://github.com/GPimentel14/dbcturbo/issues
+Encoding: UTF-8
+Depends: R (>= 4.0.0)
+LazyData: false
+NeedsCompilation: yes
+SystemRequirements: C99 compiler
+Suggests:
+    data.table (>= 1.14.0),
+    arrow (>= 12.0.0),
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0
