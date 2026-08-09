@@ -1,2 +1,6 @@
 ^\.github$
 ^CITATION\.cff$
+^cran-comments\.md$
+^actualizar\.sh$
+^dbcturbo_.*\.tar\.gz$
+

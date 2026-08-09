@@ -67,6 +67,18 @@ library(dbcturbo)
 dbc2dbf("DENGBR23.dbc", "dengue_2023.dbf")
 ```
 
+---
+
+## 🌐 Prefer a No-Code Web Interface?
+
+If you or your team prefer a visual, cloud-based platform without installing R or compiling C libraries, explore **[Dashboard DataSUS](https://bi.gelanyx.com)** powered by **[Gelanyx](https://gelanyx.com)**:
+- ⚡ **1-Click Conversion:** DBC, DBF, Parquet, and Excel directly in your browser.
+- 📊 **Automated BI Dashboards:** Instant epidemiological trends, curves, and demographic distribution metrics.
+- ☁️ **Batch Processing:** Cloud conversion for multi-year and national databases.
+- 📱 **Mobile & Desktop Ready:** Access your health intelligence from anywhere.
+
+---
+
 ## Citation
 
 If you use `dbcturbo` in your research, please cite it:
@@ -80,3 +92,4 @@ If you use `dbcturbo` in your research, please cite it:
   url = {https://github.com/GPimentel14/dbcturbo},
 }
 ```
+

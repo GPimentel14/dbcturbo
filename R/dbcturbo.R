@@ -204,6 +204,7 @@ read_dbc <- function(file, batch_size = 4096L, encoding = "CP850", ...) {
 #'   Default \code{8192L}.
 #' @param encoding    Character string. Source encoding of character fields.
 #'   Default \code{"CP850"}.
+#' @param progress    Function or \code{NULL}. Optional callback for progress reporting.
 #'
 #' @return \code{TRUE} invisibly on success. Stops if the \pkg{arrow} package
 #'   is not installed.
@@ -232,7 +233,7 @@ read_dbc <- function(file, batch_size = 4096L, encoding = "CP850", ...) {
 #' }
 #'
 #' @export
-dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding = "CP850") {
+dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding = "CP850", progress = NULL) {
   if (!requireNamespace("arrow", quietly = TRUE)) {
     stop("The 'arrow' package is required to generate Parquet files.\n",
          "Please install it running: install.packages('arrow')")
@@ -246,8 +247,8 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding
   tmp_csv <- tempfile(fileext = ".csv")
   on.exit(unlink(tmp_csv), add = TRUE)
 
-  # 2. Extract data using our C streaming engine
-  dbc_to_csv(input_file, tmp_csv, batch_size = batch_size, encoding = encoding)
+  # 2. Extract data using our C streaming engine with progress callback
+  dbc_to_csv(input_file, tmp_csv, batch_size = batch_size, encoding = encoding, progress = progress)
 
   # 3. Read the temporary CSV with arrow and save as Parquet
   # read_csv_arrow is extremely fast and handles type inference automatically

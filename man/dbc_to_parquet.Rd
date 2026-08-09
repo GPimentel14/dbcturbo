@@ -4,7 +4,13 @@
 \alias{dbc_to_parquet}
 \title{Convert a DATASUS DBC file directly to Parquet format}
 \usage{
-dbc_to_parquet(input_file, output_file, batch_size = 8192L, encoding = "CP850")
+dbc_to_parquet(
+  input_file,
+  output_file,
+  batch_size = 8192L,
+  encoding = "CP850",
+  progress = NULL
+)
 }
 \arguments{
 \item{input_file}{Character string. Path to the source \code{.dbc} file.}
@@ -16,6 +22,8 @@ Default \code{8192L}.}
 
 \item{encoding}{Character string. Source encoding of character fields.
 Default \code{"CP850"}.}
+
+\item{progress}{Function or \code{NULL}. Optional callback for progress reporting.}
 }
 \value{
 \code{TRUE} invisibly on success. Stops if the \pkg{arrow} package
