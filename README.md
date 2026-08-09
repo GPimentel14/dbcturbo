@@ -196,7 +196,7 @@ dbGetQuery(con, "
 
 ## 🌐 Prefer a No-Code Web Interface?
 
-If you or your team prefer a visual, cloud-based platform without installing R or compiling C libraries, explore **[Dashboard DataSUS](https://bi.gelanyx.com)** powered by **[Gelanyx](https://gelanyx.com)**:
+If you or your team prefer a visual, cloud-based platform without installing R or compiling C libraries, explore **[Dashboard DataSUS](https://www.gelanyx.datasus.com/)** powered by **[Gelanyx](https://gelanyx.com)**:
 
 - ⚡ **1-Click Conversion:** DBC, DBF, Parquet, and Excel directly in your browser.
 - 📊 **Automated BI Dashboards:** Instant epidemiological trends and demographic metrics.
