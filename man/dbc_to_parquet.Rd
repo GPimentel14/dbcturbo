@@ -9,6 +9,7 @@ dbc_to_parquet(
   output_file,
   batch_size = 8192L,
   encoding = "CP850",
+  verbose = TRUE,
   progress = NULL
 )
 }
@@ -22,6 +23,9 @@ Default \code{8192L}.}
 
 \item{encoding}{Character string. Source encoding of character fields.
 Default \code{"CP850"}.}
+
+\item{verbose}{Logical. If \code{TRUE} (default), prints file metrics,
+a progress bar, and elapsed time upon completion.}
 
 \item{progress}{Function or \code{NULL}. Optional callback for progress reporting.}
 }

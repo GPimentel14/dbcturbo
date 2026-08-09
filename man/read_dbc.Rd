@@ -4,7 +4,7 @@
 \alias{read_dbc}
 \title{Read a DATASUS DBC file into an R data frame}
 \usage{
-read_dbc(file, batch_size = 4096L, encoding = "CP850", ...)
+read_dbc(file, batch_size = 4096L, encoding = "CP850", verbose = FALSE, ...)
 }
 \arguments{
 \item{file}{Character string. Path to the \code{.dbc} file.}
@@ -14,6 +14,9 @@ Default \code{4096L}.}
 
 \item{encoding}{Character string. Source encoding of character fields.
 Default \code{"CP850"} (standard DATASUS legacy encoding).}
+
+\item{verbose}{Logical. Passed to \code{\link{dbc_to_csv}}.
+Default \code{FALSE} for in-memory reading.}
 
 \item{...}{Additional arguments forwarded to the CSV reader.}
 }

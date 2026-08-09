@@ -50,9 +50,13 @@ dbc2dbf <- function(input_file, output_file) {
 #' @param encoding    Character string or \code{NULL}. Source encoding of
 #'   character fields (e.g. \code{"CP850"}, \code{"latin1"}).
 #'   \code{NULL} (default) assumes ASCII / UTF-8.
-#' @param progress    Function or \code{NULL}. Called after each batch with
+#' @param verbose     Logical. If \code{TRUE} (default), prints file metrics,
+#'   a progress bar, and elapsed time upon completion.
+#' @param progress    Function or \code{NULL}. Custom callback called after each batch with
 #'   two numeric arguments: \code{done} and \code{total} (record counts).
 #'   Ctrl+C is honoured between batches.
+#'
+#' @param ...         Optional internal arguments.
 #'
 #' @return \code{TRUE} invisibly on success. On failure, stops with a
 #'   descriptive error message.
@@ -62,13 +66,12 @@ dbc2dbf <- function(input_file, output_file) {
 #' # Simple usage: just provide input and output paths
 #' dbc_to_csv("SINASC_RS_2024.dbc", "SINASC_RS_2024.csv")
 #'
-#' # Advanced usage: with progress bar and custom batch size
+#' # Advanced usage: with custom batch size and silent mode
 #' dbc_to_csv(
 #'   input_file  = "SINASC_RS_2024.dbc",
 #'   output_file = "SINASC_RS_2024.csv",
 #'   batch_size  = 10000L,
-#'   progress    = function(done, total)
-#'     cat(sprintf("\r  %.1f%%", 100 * done / total))
+#'   verbose     = FALSE
 #' )
 #' library(data.table)
 #' dt <- fread("SINASC_RS_2024.csv")
@@ -79,7 +82,9 @@ dbc2dbf <- function(input_file, output_file) {
 dbc_to_csv <- function(input_file, output_file,
                        batch_size = 4096L,
                        encoding   = NULL,
-                       progress   = NULL) {
+                       verbose    = TRUE,
+                       progress   = NULL,
+                       ...) {
   .assert_scalar_string(input_file,  "input_file")
   .assert_scalar_string(output_file, "output_file")
 
@@ -97,16 +102,37 @@ dbc_to_csv <- function(input_file, output_file,
   if (!is.null(progress) && !is.function(progress))
     stop("'progress' must be a function or NULL")
 
-  if (is.null(progress) && interactive()) {
+  input_file  <- normalizePath(input_file,  mustWork = TRUE)
+  output_file <- normalizePath(output_file, mustWork = FALSE)
+
+  extra_args <- list(...)
+  disp_name  <- if (!is.null(extra_args$output_display)) extra_args$output_display else basename(output_file)
+
+  if (isTRUE(verbose) && is.null(progress)) {
+    finfo <- file.info(input_file)
+    meta  <- tryCatch(dbc_inspect(input_file), error = function(e) NULL)
+    nrec  <- if (!is.null(meta)) meta$nrecords else 0L
+    ncols <- if (!is.null(meta)) nrow(meta$fields) else 0L
+
+    cat(sprintf("\n\u2500\u2500 dbcturbo streaming engine \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"))
+    cat(sprintf(" \u2022 Input:    %s (%s)\n", basename(input_file), .format_bytes(finfo$size)))
+    if (nrec > 0L) {
+      cat(sprintf(" \u2022 Records:  %s rows | %d columns\n", format(nrec, big.mark = ","), ncols))
+    }
+    cat(sprintf(" \u2022 Output:   %s\n", disp_name))
+
+    t0 <- proc.time()
     pb <- utils::txtProgressBar(style = 3)
     progress <- function(done, total) {
       utils::setTxtProgressBar(pb, done / total)
-      if (done >= total) close(pb)
+      if (done >= total) {
+        close(pb)
+        elapsed <- (proc.time() - t0)[["elapsed"]]
+        speed <- if (elapsed > 0.01 && total > 0) sprintf(" (%.0f rows/s)", total / elapsed) else ""
+        cat(sprintf(" \u2714 Conversion completed in %.2fs%s\n\n", elapsed, speed))
+      }
     }
   }
-
-  input_file  <- normalizePath(input_file,  mustWork = TRUE)
-  output_file <- normalizePath(output_file, mustWork = FALSE)
 
   invisible(.Call("C_dbc_to_csv",
                   input_file, output_file, batch_size, encoding,
@@ -162,6 +188,8 @@ dbc_inspect <- function(input_file) {
 #'   Default \code{4096L}.
 #' @param encoding   Character string. Source encoding of character fields.
 #'   Default \code{"CP850"} (standard DATASUS legacy encoding).
+#' @param verbose    Logical. Passed to \code{\link{dbc_to_csv}}.
+#'   Default \code{FALSE} for in-memory reading.
 #' @param ...        Additional arguments forwarded to the CSV reader.
 #'
 #' @return A \code{data.frame} or \code{data.table} (if \pkg{data.table}
@@ -174,11 +202,11 @@ dbc_inspect <- function(input_file) {
 #' }
 #'
 #' @export
-read_dbc <- function(file, batch_size = 4096L, encoding = "CP850", ...) {
+read_dbc <- function(file, batch_size = 4096L, encoding = "CP850", verbose = FALSE, ...) {
   tmp <- tempfile(fileext = ".csv")
   on.exit(unlink(tmp), add = TRUE)
 
-  dbc_to_csv(file, tmp, batch_size = batch_size, encoding = encoding)
+  dbc_to_csv(file, tmp, batch_size = batch_size, encoding = encoding, verbose = verbose)
 
   if (requireNamespace("data.table", quietly = TRUE)) {
     data.table::fread(tmp, encoding = "UTF-8", ...)
@@ -204,6 +232,8 @@ read_dbc <- function(file, batch_size = 4096L, encoding = "CP850", ...) {
 #'   Default \code{8192L}.
 #' @param encoding    Character string. Source encoding of character fields.
 #'   Default \code{"CP850"}.
+#' @param verbose     Logical. If \code{TRUE} (default), prints file metrics,
+#'   a progress bar, and elapsed time upon completion.
 #' @param progress    Function or \code{NULL}. Optional callback for progress reporting.
 #'
 #' @return \code{TRUE} invisibly on success. Stops if the \pkg{arrow} package
@@ -233,7 +263,7 @@ read_dbc <- function(file, batch_size = 4096L, encoding = "CP850", ...) {
 #' }
 #'
 #' @export
-dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding = "CP850", progress = NULL) {
+dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding = "CP850", verbose = TRUE, progress = NULL) {
   if (!requireNamespace("arrow", quietly = TRUE)) {
     stop("The 'arrow' package is required to generate Parquet files.\n",
          "Please install it running: install.packages('arrow')")
@@ -241,6 +271,16 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding
 
   .assert_scalar_string(input_file, "input_file")
   .assert_scalar_string(output_file, "output_file")
+
+  if (grepl("\\.csv$", output_file, ignore.case = TRUE)) {
+    stop(
+      "The output path ends in '.csv', but dbc_to_parquet() always writes binary Parquet format.\n",
+      "  - To generate a CSV file use: dbc_to_csv(\"", basename(input_file), "\", \"", basename(output_file), "\")\n",
+      "  - To generate a Parquet file change the extension: \"",
+      sub("\\.csv$", ".parquet", output_file, ignore.case = TRUE), "\""
+    )
+  }
+
   input_file <- normalizePath(input_file, mustWork = TRUE)
 
   # 1. Create a fast temporary CSV
@@ -248,7 +288,7 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding
   on.exit(unlink(tmp_csv), add = TRUE)
 
   # 2. Extract data using our C streaming engine with progress callback
-  dbc_to_csv(input_file, tmp_csv, batch_size = batch_size, encoding = encoding, progress = progress)
+  dbc_to_csv(input_file, tmp_csv, batch_size = batch_size, encoding = encoding, verbose = verbose, progress = progress, output_display = basename(output_file))
 
   # 3. Read the temporary CSV with arrow and save as Parquet
   # read_csv_arrow is extremely fast and handles type inference automatically
@@ -259,7 +299,17 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding
 }
 
 
-# ── Internal validator (not exported) ─────────────────────────────────────────
+# -- Internal helpers (not exported) -------------------------------------------
+.format_bytes <- function(bytes) {
+  if (is.na(bytes) || bytes <= 0) return("0 B")
+  if (bytes < 1024) return(paste0(bytes, " B"))
+  if (bytes < 1024^2) return(sprintf("%.1f KB", bytes / 1024))
+  if (bytes < 1024^3) return(sprintf("%.1f MB", bytes / 1024^2))
+  return(sprintf("%.2f GB", bytes / 1024^3))
+}
+
+
+# -- Internal validator (not exported) -----------------------------------------
 # Not exported (leading dot convention).
 .assert_scalar_string <- function(x, name) {
   if (!is.character(x) || length(x) != 1L)

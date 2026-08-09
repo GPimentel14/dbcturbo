@@ -9,7 +9,9 @@ dbc_to_csv(
   output_file,
   batch_size = 4096L,
   encoding = NULL,
-  progress = NULL
+  verbose = TRUE,
+  progress = NULL,
+  ...
 )
 }
 \arguments{
@@ -24,9 +26,14 @@ Default \code{4096L}.}
 character fields (e.g. \code{"CP850"}, \code{"latin1"}).
 \code{NULL} (default) assumes ASCII / UTF-8.}
 
-\item{progress}{Function or \code{NULL}. Called after each batch with
+\item{verbose}{Logical. If \code{TRUE} (default), prints file metrics,
+a progress bar, and elapsed time upon completion.}
+
+\item{progress}{Function or \code{NULL}. Custom callback called after each batch with
 two numeric arguments: \code{done} and \code{total} (record counts).
 Ctrl+C is honoured between batches.}
+
+\item{...}{Optional internal arguments.}
 }
 \value{
 \code{TRUE} invisibly on success. On failure, stops with a
