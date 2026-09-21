@@ -1,0 +1,40 @@
+# R session and IDE files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.Renviron
+.Renviron.site
+.env
+.env.*
+!.env.example
+
+# Native build products
+src/*.o
+src/*.so
+src/*.dll
+src/*.dylib
+*.gcda
+*.gcno
+*.prof
+coverage/
+
+# R package build and check products
+/*.tar.gz
+/*.Rcheck/
+/.Rcheck/
+/dbcturbo.Rcheck/
+*.Rout
+
+# Local conversion outputs and input datasets
+/*.tmp
+/*.dbf
+/*.parquet
+/*.csv
+/*.dbc
+!inst/extdata/
+!inst/extdata/*.dbc
+
+# Operating-system files
+.DS_Store
+Thumbs.db

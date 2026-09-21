@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>dbcturbo: Fast and Efficient Reading of DATASUS DBC Files</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">dbcturbo: Fast and Efficient Reading of DATASUS DBC
+Files</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#introduction" id="toc-introduction">Introduction</a></li>
+<li><a href="#installation" id="toc-installation">Installation</a></li>
+<li><a href="#recommended-workflow"
+id="toc-recommended-workflow">Recommended Workflow</a>
+<ul>
+<li><a href="#inspect-metadata-without-decompressing"
+id="toc-inspect-metadata-without-decompressing">1. Inspect metadata
+without decompressing</a></li>
+<li><a href="#read-directly-into-a-data-frame-small-to-medium-files"
+id="toc-read-directly-into-a-data-frame-small-to-medium-files">2. Read
+directly into a data frame (small to medium files)</a></li>
+<li><a href="#working-with-large-files-that-exceed-excels-row-limit"
+id="toc-working-with-large-files-that-exceed-excels-row-limit">3.
+Working with large files that exceed Excel’s row limit</a></li>
+<li><a href="#stream-to-csv-on-disk-large-files-low-ram-usage"
+id="toc-stream-to-csv-on-disk-large-files-low-ram-usage">4. Stream to
+CSV on disk (large files, low RAM usage)</a></li>
+<li><a href="#convert-to-parquet-recommended-for-big-data"
+id="toc-convert-to-parquet-recommended-for-big-data">5. Convert to
+Parquet (recommended for Big Data)</a></li>
+<li><a href="#decompress-to-dbf-interoperability"
+id="toc-decompress-to-dbf-interoperability">6. Decompress to DBF
+(interoperability)</a></li>
+<li><a href="#parallel-batch-processing"
+id="toc-parallel-batch-processing">7. Parallel batch processing</a></li>
+</ul></li>
+<li><a href="#practical-epidemiology-examples"
+id="toc-practical-epidemiology-examples">Practical Epidemiology
+Examples</a>
+<ul>
+<li><a href="#working-with-dates" id="toc-working-with-dates">Working
+with dates</a></li>
+<li><a href="#decoding-the-age-field-nu_idade_n"
+id="toc-decoding-the-age-field-nu_idade_n">Decoding the age field
+(NU_IDADE_N)</a></li>
+<li><a href="#handling-missing-values"
+id="toc-handling-missing-values">Handling missing values</a></li>
+<li><a href="#frequency-tables-and-case-counts"
+id="toc-frequency-tables-and-case-counts">Frequency tables and case
+counts</a></li>
+<li><a href="#combining-multiple-dbc-files-full-year-from-monthly-files"
+id="toc-combining-multiple-dbc-files-full-year-from-monthly-files">Combining
+multiple DBC files (full year from monthly files)</a></li>
+<li><a href="#fast-analytical-queries-on-parquet-files-with-duckdb"
+id="toc-fast-analytical-queries-on-parquet-files-with-duckdb">Fast
+analytical queries on Parquet files with DuckDB</a></li>
+<li><a href="#export-to-formatted-xlsx-excel"
+id="toc-export-to-formatted-xlsx-excel">Export to formatted XLSX
+(Excel)</a></li>
+</ul></li>
+<li><a href="#performance-comparison"
+id="toc-performance-comparison">Performance Comparison</a></li>
+<li><a href="#dbc-format-how-decompression-works"
+id="toc-dbc-format-how-decompression-works">DBC Format — How
+Decompression Works</a></li>
+<li><a href="#thread-safety" id="toc-thread-safety">Thread
+Safety</a></li>
+</ul>
+</nav>
+<p><code>{r setup, include=FALSE} knitr::opts_chunk$set(echo = TRUE, eval = FALSE)</code></p>
+<h2 id="introduction">Introduction</h2>
+<p><code>dbcturbo</code> is a high-performance decompression engine for
+DATASUS <code>.dbc</code> files, built from scratch in C99 and designed
+for epidemiological Big Data. Unlike <code>read.dbc</code>, <strong>no
+full dataset is loaded into RAM</strong> — records are processed in
+streaming batches and written directly to disk.</p>
+<p>DBC files from Brazil’s DATASUS system (SINAN, SIM, SINASC, SIH, SIA)
+can contain millions of records. <code>dbcturbo</code> handles them
+efficiently and outputs clean UTF-8 encoded files.</p>
+<h2 id="installation">Installation</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># From CRAN (stable)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;dbcturbo&quot;</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># From GitHub (development)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>remotes<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">&quot;GPimentel14/dbcturbo&quot;</span>)</span></code></pre></div>
+<h2 id="recommended-workflow">Recommended Workflow</h2>
+<h3 id="inspect-metadata-without-decompressing">1. Inspect metadata
+without decompressing</h3>
+<p>Before converting, check how many records and columns the file
+contains:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>meta <span class="ot">&lt;-</span> <span class="fu">dbc_inspect</span>(<span class="st">&quot;DENGBR23.dbc&quot;</span>)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Records:&quot;</span>, meta<span class="sc">$</span>nrecords, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Columns:&quot;</span>, <span class="fu">nrow</span>(meta<span class="sc">$</span>fields), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(meta<span class="sc">$</span>fields)</span></code></pre></div>
+<h3 id="read-directly-into-a-data-frame-small-to-medium-files">2. Read
+directly into a data frame (small to medium files)</h3>
+<p>For files up to ~2 million records, load directly into R:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_dbc</span>(<span class="st">&quot;DENGBR23.dbc&quot;</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(df)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">dim</span>(df)</span></code></pre></div>
+<h3 id="working-with-large-files-that-exceed-excels-row-limit">3.
+Working with large files that exceed Excel’s row limit</h3>
+<blockquote>
+<p><strong>Important:</strong> Microsoft Excel supports a maximum of
+<strong>1,048,576 rows</strong>. Many DATASUS files — such as national
+Dengue or SINASC datasets — contain over 1.6 million records and
+<strong>cannot be fully opened in Excel</strong>.</p>
+</blockquote>
+<p>The recommended approach is to load the data in R and filter it
+<strong>before</strong> exporting to Excel:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Load the full dataset into R</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_dbc</span>(<span class="st">&quot;DENGBR23.dbc&quot;</span>)</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Filter to a single state before exporting</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># (use the two-digit IBGE state code in SG_UF_NOT)</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>df_rs <span class="ot">&lt;-</span> df[df<span class="sc">$</span>SG_UF_NOT <span class="sc">==</span> <span class="st">&quot;43&quot;</span>, ]   <span class="co"># Rio Grande do Sul</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>df_sp <span class="ot">&lt;-</span> df[df<span class="sc">$</span>SG_UF_NOT <span class="sc">==</span> <span class="st">&quot;35&quot;</span>, ]   <span class="co"># São Paulo</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>df_rj <span class="ot">&lt;-</span> df[df<span class="sc">$</span>SG_UF_NOT <span class="sc">==</span> <span class="st">&quot;33&quot;</span>, ]   <span class="co"># Rio de Janeiro</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Export filtered subset — this will fit comfortably in Excel</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="fu">write.csv</span>(df_rs, <span class="st">&quot;dengue_2023_RS.csv&quot;</span>, <span class="at">row.names =</span> <span class="cn">FALSE</span>)</span></code></pre></div>
+<p>You can also filter by year, municipality, or any other variable:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Filter by municipality (6-digit IBGE code)</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>df_porto_alegre <span class="ot">&lt;-</span> df[df<span class="sc">$</span>ID_MN_RESI <span class="sc">==</span> <span class="st">&quot;431490&quot;</span>, ]</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">write.csv</span>(df_porto_alegre, <span class="st">&quot;dengue_2023_PortoAlegre.csv&quot;</span>, <span class="at">row.names =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Filter confirmed cases only (CLASSI_FIN == 10 in SINAN)</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>df_confirmed <span class="ot">&lt;-</span> df[<span class="sc">!</span><span class="fu">is.na</span>(df<span class="sc">$</span>CLASSI_FIN) <span class="sc">&amp;</span> df<span class="sc">$</span>CLASSI_FIN <span class="sc">==</span> <span class="dv">10</span>, ]</span></code></pre></div>
+<h3 id="stream-to-csv-on-disk-large-files-low-ram-usage">4. Stream to
+CSV on disk (large files, low RAM usage)</h3>
+<p>For files too large to fit in RAM, stream directly to a CSV file:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">dbc_to_csv</span>(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">input_file  =</span> <span class="st">&quot;DENGBR23.dbc&quot;</span>,</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">output_file =</span> <span class="st">&quot;dengue_2023.csv&quot;</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">batch_size  =</span> <span class="dv">10000</span><span class="dt">L</span>,   <span class="co"># records per batch</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">encoding    =</span> <span class="st">&quot;CP850&quot;</span>   <span class="co"># standard DATASUS legacy encoding</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>The output CSV is automatically encoded as <strong>UTF-8 with
+BOM</strong>, ensuring correct display of Portuguese characters (ã, ç,
+é, etc.) in Excel and other tools.</p>
+<h3 id="convert-to-parquet-recommended-for-big-data">5. Convert to
+Parquet (recommended for Big Data)</h3>
+<p>Parquet is the best format for large epidemiological datasets: -
+Compressed (3–5× smaller than CSV) - Columnar (fast for analytical
+queries) - Compatible with R (<code>arrow</code>), Python
+(<code>pandas</code>, <code>polars</code>), Power BI, DuckDB</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">dbc_to_parquet</span>(</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">input_file  =</span> <span class="st">&quot;DENGBR23.dbc&quot;</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">output_file =</span> <span class="st">&quot;dengue_2023.parquet&quot;</span>   <span class="co"># must end in .parquet</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Read it back in R</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(arrow)</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_parquet</span>(<span class="st">&quot;dengue_2023.parquet&quot;</span>)</span></code></pre></div>
+<blockquote>
+<p><strong>Note:</strong> Do not pass a <code>.csv</code> path to
+<code>dbc_to_parquet()</code> — that function always writes binary
+Parquet format. Use <code>dbc_to_csv()</code> for CSV output.</p>
+</blockquote>
+<h3 id="decompress-to-dbf-interoperability">6. Decompress to DBF
+(interoperability)</h3>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">dbc2dbf</span>(<span class="st">&quot;SIM_RS_2023.dbc&quot;</span>, <span class="st">&quot;SIM_RS_2023.dbf&quot;</span>)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Can now be read by dbfread, haven, or any DBF reader</span></span></code></pre></div>
+<h3 id="parallel-batch-processing">7. Parallel batch processing</h3>
+<p>All functions are thread-safe and can be called in parallel:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(parallel)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>files <span class="ot">&lt;-</span> <span class="fu">list.files</span>(<span class="st">&quot;datasus/&quot;</span>, <span class="at">pattern =</span> <span class="st">&quot;</span><span class="sc">\\</span><span class="st">.dbc$&quot;</span>, <span class="at">full.names =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">mclapply</span>(files, <span class="cf">function</span>(f) {</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  out <span class="ot">&lt;-</span> <span class="fu">sub</span>(<span class="st">&quot;</span><span class="sc">\\</span><span class="st">.dbc$&quot;</span>, <span class="st">&quot;.csv&quot;</span>, f)</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">dbc_to_csv</span>(f, out)</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>}, <span class="at">mc.cores =</span> <span class="dv">4</span><span class="dt">L</span>)</span></code></pre></div>
+<h2 id="practical-epidemiology-examples">Practical Epidemiology
+Examples</h2>
+<h3 id="working-with-dates">Working with dates</h3>
+<p>DATASUS stores dates as character strings in <code>YYYYMMDD</code>
+format (e.g., <code>"20240115"</code>). Convert them to proper R
+<code>Date</code> objects for analysis:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_dbc</span>(<span class="st">&quot;DENGBR23.dbc&quot;</span>)</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert notification and symptom onset dates</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>df<span class="sc">$</span>DT_NOTIFIC <span class="ot">&lt;-</span> <span class="fu">as.Date</span>(df<span class="sc">$</span>DT_NOTIFIC, <span class="at">format =</span> <span class="st">&quot;%Y%m%d&quot;</span>)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>df<span class="sc">$</span>DT_SIN_PRI <span class="ot">&lt;-</span> <span class="fu">as.Date</span>(df<span class="sc">$</span>DT_SIN_PRI, <span class="at">format =</span> <span class="st">&quot;%Y%m%d&quot;</span>)</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Calculate notification delay (days between symptom onset and notification)</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>df<span class="sc">$</span>delay_days <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(df<span class="sc">$</span>DT_NOTIFIC <span class="sc">-</span> df<span class="sc">$</span>DT_SIN_PRI)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Cases by month</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>df<span class="sc">$</span>month <span class="ot">&lt;-</span> <span class="fu">format</span>(df<span class="sc">$</span>DT_NOTIFIC, <span class="st">&quot;%Y-%m&quot;</span>)</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(df<span class="sc">$</span>month)</span></code></pre></div>
+<h3 id="decoding-the-age-field-nu_idade_n">Decoding the age field
+(NU_IDADE_N)</h3>
+<p>DATASUS encodes age in a single 4-digit integer where the first digit
+indicates the unit:</p>
+<table>
+<thead>
+<tr class="header">
+<th>First digit</th>
+<th>Unit</th>
+<th>Example</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>Hours</td>
+<td>1012</td>
+<td>12 hours</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>Days</td>
+<td>2015</td>
+<td>15 days</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>Months</td>
+<td>3006</td>
+<td>6 months</td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td>Years</td>
+<td>4025</td>
+<td>25 years</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Decode NU_IDADE_N into age in years</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>decode_age <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(x)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>  unit  <span class="ot">&lt;-</span> x <span class="sc">%/%</span> <span class="dv">1000</span>          <span class="co"># first digit</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>  value <span class="ot">&lt;-</span> x <span class="sc">%%</span>  <span class="dv">1000</span>          <span class="co"># remaining digits</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>  age_years <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(unit <span class="sc">==</span> <span class="dv">4</span>, value,           <span class="co"># already in years</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>               <span class="fu">ifelse</span>(unit <span class="sc">==</span> <span class="dv">3</span>, value <span class="sc">/</span> <span class="dv">12</span>,      <span class="co"># months to years</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>               <span class="fu">ifelse</span>(unit <span class="sc">==</span> <span class="dv">2</span>, value <span class="sc">/</span> <span class="dv">365</span>,     <span class="co"># days to years</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>               <span class="fu">ifelse</span>(unit <span class="sc">==</span> <span class="dv">1</span>, value <span class="sc">/</span> <span class="dv">8760</span>,    <span class="co"># hours to years</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>               <span class="cn">NA_real_</span>))))</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>  age_years</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>df<span class="sc">$</span>age_years <span class="ot">&lt;-</span> <span class="fu">decode_age</span>(df<span class="sc">$</span>NU_IDADE_N)</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Age group (5-year bands)</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>df<span class="sc">$</span>age_group <span class="ot">&lt;-</span> <span class="fu">cut</span>(df<span class="sc">$</span>age_years,</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">breaks =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">5</span>, <span class="dv">15</span>, <span class="dv">25</span>, <span class="dv">35</span>, <span class="dv">45</span>, <span class="dv">55</span>, <span class="dv">65</span>, <span class="cn">Inf</span>),</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">&quot;&lt;5&quot;</span>, <span class="st">&quot;5-14&quot;</span>, <span class="st">&quot;15-24&quot;</span>, <span class="st">&quot;25-34&quot;</span>, <span class="st">&quot;35-44&quot;</span>, <span class="st">&quot;45-54&quot;</span>, <span class="st">&quot;55-64&quot;</span>, <span class="st">&quot;65+&quot;</span>),</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">right  =</span> <span class="cn">FALSE</span></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<h3 id="handling-missing-values">Handling missing values</h3>
+<p>DATASUS often uses empty strings (<code>""</code>) instead of
+<code>NA</code>. Convert them:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Replace all empty strings with NA across the entire data frame</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>df[df <span class="sc">==</span> <span class="st">&quot;&quot;</span>] <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Check missing data per column</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>missing_pct <span class="ot">&lt;-</span> <span class="fu">sort</span>(<span class="fu">colMeans</span>(<span class="fu">is.na</span>(df)) <span class="sc">*</span> <span class="dv">100</span>, <span class="at">decreasing =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="fu">round</span>(missing_pct[missing_pct <span class="sc">&gt;</span> <span class="dv">0</span>], <span class="dv">1</span>))</span></code></pre></div>
+<h3 id="frequency-tables-and-case-counts">Frequency tables and case
+counts</h3>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Cases by sex</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(df<span class="sc">$</span>CS_SEXO)</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Cases by race/ethnicity (CS_RACA)</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="co"># 1=White, 2=Black, 3=Yellow, 4=Brown, 5=Indigenous</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(df<span class="sc">$</span>CS_RACA)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Cases by state (SG_UF_NOT)</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="fu">sort</span>(<span class="fu">table</span>(df<span class="sc">$</span>SG_UF_NOT), <span class="at">decreasing =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Cross-tabulation: sex by outcome (EVOLUCAO)</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="co"># 1=Cure, 2=Death, 3=Death by other causes, 9=Unknown</span></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(<span class="at">Sex =</span> df<span class="sc">$</span>CS_SEXO, <span class="at">Outcome =</span> df<span class="sc">$</span>EVOLUCAO)</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Incidence rate table: cases per state per year</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a><span class="fu">aggregate</span>(<span class="fu">cbind</span>(<span class="at">cases =</span> TP_NOT) <span class="sc">~</span> SG_UF_NOT <span class="sc">+</span> NU_ANO,</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>          <span class="at">data  =</span> df,</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>          <span class="at">FUN   =</span> length)</span></code></pre></div>
+<h3
+id="combining-multiple-dbc-files-full-year-from-monthly-files">Combining
+multiple DBC files (full year from monthly files)</h3>
+<p>Some DATASUS systems distribute data in monthly files. Combine them
+easily:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co"># List all monthly DBC files in a folder</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>files <span class="ot">&lt;-</span> <span class="fu">list.files</span>(<span class="st">&quot;dbc/2023/&quot;</span>, <span class="at">pattern =</span> <span class="st">&quot;</span><span class="sc">\\</span><span class="st">.dbc$&quot;</span>, <span class="at">full.names =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Read and combine all into a single data frame</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>df_year <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(files, read_dbc))</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Total records:&quot;</span>, <span class="fu">nrow</span>(df_year), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Alternative with data.table (faster for large files)</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(data.table)</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>dt_year <span class="ot">&lt;-</span> <span class="fu">rbindlist</span>(<span class="fu">lapply</span>(files, read_dbc))</span></code></pre></div>
+<h3 id="fast-analytical-queries-on-parquet-files-with-duckdb">Fast
+analytical queries on Parquet files with DuckDB</h3>
+<p>For very large datasets, use DuckDB to run SQL directly on Parquet
+files <strong>without loading everything into RAM</strong>:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(duckdb)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert once</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="fu">dbc_to_parquet</span>(<span class="st">&quot;DENGBR23.dbc&quot;</span>, <span class="st">&quot;dengue_2023.parquet&quot;</span>)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Query without loading the full file</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>con <span class="ot">&lt;-</span> <span class="fu">dbConnect</span>(<span class="fu">duckdb</span>())</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">dbGetQuery</span>(con, <span class="st">&quot;</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="st">  SELECT</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="st">    SG_UF_NOT,</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="st">    COUNT(*)          AS total_cases,</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="st">    SUM(CASE WHEN EVOLUCAO = &#39;2&#39; THEN 1 ELSE 0 END) AS deaths</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="st">  FROM &#39;dengue_2023.parquet&#39;</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="st">  GROUP BY SG_UF_NOT</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="st">  ORDER BY total_cases DESC</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;</span>)</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="fu">dbDisconnect</span>(con)</span></code></pre></div>
+<h3 id="export-to-formatted-xlsx-excel">Export to formatted XLSX
+(Excel)</h3>
+<p>When your filtered data fits within Excel’s limits, export to
+<code>.xlsx</code> with formatting using the <code>openxlsx</code>
+package:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbcturbo)</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(openxlsx)</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_dbc</span>(<span class="st">&quot;DENGBR23.dbc&quot;</span>)</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Filter to a manageable subset</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>df_rs_2023 <span class="ot">&lt;-</span> df[df<span class="sc">$</span>SG_UF_NOT <span class="sc">==</span> <span class="st">&quot;43&quot;</span> <span class="sc">&amp;</span> df<span class="sc">$</span>NU_ANO <span class="sc">==</span> <span class="st">&quot;2023&quot;</span>, ]</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a formatted workbook</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>wb <span class="ot">&lt;-</span> <span class="fu">createWorkbook</span>()</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a><span class="fu">addWorksheet</span>(wb, <span class="st">&quot;Dengue_RS_2023&quot;</span>)</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Style for the header row</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>header_style <span class="ot">&lt;-</span> <span class="fu">createStyle</span>(</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">fontColour =</span> <span class="st">&quot;#FFFFFF&quot;</span>,</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">fgFill     =</span> <span class="st">&quot;#2E4057&quot;</span>,</span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">halign     =</span> <span class="st">&quot;CENTER&quot;</span>,</span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">textDecoration =</span> <span class="st">&quot;Bold&quot;</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a><span class="fu">writeData</span>(wb, <span class="st">&quot;Dengue_RS_2023&quot;</span>, df_rs_2023)</span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a><span class="fu">addStyle</span>(wb, <span class="st">&quot;Dengue_RS_2023&quot;</span>, header_style,</span>
+<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a>         <span class="at">rows =</span> <span class="dv">1</span>, <span class="at">cols =</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">ncol</span>(df_rs_2023), <span class="at">gridExpand =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a><span class="fu">saveWorkbook</span>(wb, <span class="st">&quot;dengue_RS_2023.xlsx&quot;</span>, <span class="at">overwrite =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
+<h2 id="performance-comparison">Performance Comparison</h2>
+<table>
+<colgroup>
+<col style="width: 36%" />
+<col style="width: 16%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Approach</th>
+<th>Peak RAM</th>
+<th>Time (1M rows)</th>
+<th>Parallelisable</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>read.dbc</code></td>
+<td>~4 GB</td>
+<td>~45 s</td>
+<td>No</td>
+</tr>
+<tr class="even">
+<td><code>dbcturbo::read_dbc</code></td>
+<td>~600 MB</td>
+<td>~15 s</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td><code>dbcturbo::dbc_to_csv</code></td>
+<td><strong>&lt; 50 MB</strong></td>
+<td>~12 s</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<h2 id="dbc-format-how-decompression-works">DBC Format — How
+Decompression Works</h2>
+<p>A <code>.dbc</code> file from DATASUS is a <code>.dbf</code> (dBase)
+file compressed with the <strong>PKWare Implode</strong> algorithm (also
+known as <em>blast</em> in the technical literature).</p>
+<p>Binary structure:</p>
+<pre><code>[Bytes 0-7]   -&gt; DBF header (version, date, record count, header size)
+[Bytes 8-9]   -&gt; uint16_t little-endian: total DBF header size
+[Bytes 10-N]  -&gt; Field descriptors (32 bytes each) + 0x0D terminator
+[N+1 .. N+4]  -&gt; CRC32 (4 bytes — ignored during decompression)
+[N+5 .. EOF]  -&gt; Compressed payload using PKWare Implode</code></pre>
+<p>The <code>blast()</code> function (Mark Adler, 2003) decodes this
+payload using a 4096-byte sliding window (<code>MAXWIN</code>) with
+canonical Huffman coding.</p>
+<h2 id="thread-safety">Thread Safety</h2>
+<p>All engine state is stack-allocated (<code>struct state</code> in
+<code>blast.c</code>). There are no global mutable variables.
+<code>dbc_to_csv()</code> and <code>dbc2dbf()</code> can be called in
+parallel via <code>parallel::mclapply()</code> without race
+conditions.</p>
+</body>
+</html>

@@ -1,0 +1,363 @@
+---
+title: "dbcturbo: Fast and Efficient Reading of DATASUS DBC Files"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{dbcturbo: Fast and Efficient Reading of DATASUS DBC Files}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+## Introduction
+
+`dbcturbo` is a high-performance decompression engine for DATASUS `.dbc` files,
+built from scratch in C99 and designed for epidemiological Big Data. Unlike
+`read.dbc`, **no full dataset is loaded into RAM** — records are processed in
+streaming batches and written directly to disk.
+
+DBC files from Brazil's DATASUS system (SINAN, SIM, SINASC, SIH, SIA) can
+contain millions of records. `dbcturbo` handles them efficiently and outputs
+clean UTF-8 encoded files.
+
+## Installation
+
+```r
+# From CRAN (stable)
+install.packages("dbcturbo")
+
+# From GitHub (development)
+remotes::install_github("GPimentel14/dbcturbo")
+```
+
+## Recommended Workflow
+
+### 1. Inspect metadata without decompressing
+
+Before converting, check how many records and columns the file contains:
+
+```r
+library(dbcturbo)
+
+meta <- dbc_inspect("DENGBR23.dbc")
+cat("Records:", meta$nrecords, "\n")
+cat("Columns:", nrow(meta$fields), "\n")
+print(meta$fields)
+```
+
+### 2. Read directly into a data frame (small to medium files)
+
+For files up to ~2 million records, load directly into R:
+
+```r
+library(dbcturbo)
+
+df <- read_dbc("DENGBR23.dbc")
+head(df)
+dim(df)
+```
+
+### 3. Working with large files that exceed Excel's row limit
+
+> **Important:** Microsoft Excel supports a maximum of **1,048,576 rows**.
+> Many DATASUS files — such as national Dengue or SINASC datasets — contain
+> over 1.6 million records and **cannot be fully opened in Excel**.
+
+The recommended approach is to load the data in R and filter it **before**
+exporting to Excel:
+
+```r
+library(dbcturbo)
+
+# Load the full dataset into R
+df <- read_dbc("DENGBR23.dbc")
+
+# Filter to a single state before exporting
+# (use the two-digit IBGE state code in SG_UF_NOT)
+df_rs <- df[df$SG_UF_NOT == "43", ]   # Rio Grande do Sul
+df_sp <- df[df$SG_UF_NOT == "35", ]   # São Paulo
+df_rj <- df[df$SG_UF_NOT == "33", ]   # Rio de Janeiro
+
+# Export filtered subset — this will fit comfortably in Excel
+write.csv(df_rs, "dengue_2023_RS.csv", row.names = FALSE)
+```
+
+You can also filter by year, municipality, or any other variable:
+
+```r
+# Filter by municipality (6-digit IBGE code)
+df_porto_alegre <- df[df$ID_MN_RESI == "431490", ]
+write.csv(df_porto_alegre, "dengue_2023_PortoAlegre.csv", row.names = FALSE)
+
+# Filter confirmed cases only (CLASSI_FIN == 10 in SINAN)
+df_confirmed <- df[!is.na(df$CLASSI_FIN) & df$CLASSI_FIN == 10, ]
+```
+
+### 4. Stream to CSV on disk (large files, low RAM usage)
+
+For files too large to fit in RAM, stream directly to a CSV file:
+
+```r
+dbc_to_csv(
+  input_file  = "DENGBR23.dbc",
+  output_file = "dengue_2023.csv",
+  batch_size  = 10000L,   # records per batch
+  encoding    = "CP850"   # standard DATASUS legacy encoding
+)
+```
+
+The output CSV is automatically encoded as **UTF-8 with BOM**, ensuring correct
+display of Portuguese characters (ã, ç, é, etc.) in Excel and other tools.
+
+### 5. Convert to Parquet (recommended for Big Data)
+
+Parquet is the best format for large epidemiological datasets:
+- Compressed (3–5× smaller than CSV)
+- Columnar (fast for analytical queries)
+- Compatible with R (`arrow`), Python (`pandas`, `polars`), Power BI, DuckDB
+
+```r
+library(dbcturbo)
+
+dbc_to_parquet(
+  input_file  = "DENGBR23.dbc",
+  output_file = "dengue_2023.parquet"   # must end in .parquet
+)
+
+# Read it back in R
+library(arrow)
+df <- read_parquet("dengue_2023.parquet")
+```
+
+> **Note:** Do not pass a `.csv` path to `dbc_to_parquet()` — that function
+> always writes binary Parquet format. Use `dbc_to_csv()` for CSV output.
+
+### 6. Decompress to DBF (interoperability)
+
+```r
+dbc2dbf("SIM_RS_2023.dbc", "SIM_RS_2023.dbf")
+# Can now be read by dbfread, haven, or any DBF reader
+```
+
+### 7. Parallel batch processing
+
+All functions are thread-safe and can be called in parallel:
+
+```r
+library(parallel)
+files <- list.files("datasus/", pattern = "\\.dbc$", full.names = TRUE)
+mclapply(files, function(f) {
+  out <- sub("\\.dbc$", ".csv", f)
+  dbc_to_csv(f, out)
+}, mc.cores = 4L)
+```
+
+## Practical Epidemiology Examples
+
+### Working with dates
+
+DATASUS stores dates as character strings in `YYYYMMDD` format (e.g., `"20240115"`).
+Convert them to proper R `Date` objects for analysis:
+
+```r
+library(dbcturbo)
+
+df <- read_dbc("DENGBR23.dbc")
+
+# Convert notification and symptom onset dates
+df$DT_NOTIFIC <- as.Date(df$DT_NOTIFIC, format = "%Y%m%d")
+df$DT_SIN_PRI <- as.Date(df$DT_SIN_PRI, format = "%Y%m%d")
+
+# Calculate notification delay (days between symptom onset and notification)
+df$delay_days <- as.numeric(df$DT_NOTIFIC - df$DT_SIN_PRI)
+
+# Cases by month
+df$month <- format(df$DT_NOTIFIC, "%Y-%m")
+table(df$month)
+```
+
+### Decoding the age field (NU_IDADE_N)
+
+DATASUS encodes age in a single 4-digit integer where the first digit indicates
+the unit:
+
+| First digit | Unit    | Example | Meaning     |
+|-------------|---------|---------|-------------|
+| 1           | Hours   | 1012    | 12 hours    |
+| 2           | Days    | 2015    | 15 days     |
+| 3           | Months  | 3006    | 6 months    |
+| 4           | Years   | 4025    | 25 years    |
+
+```r
+# Decode NU_IDADE_N into age in years
+decode_age <- function(x) {
+  x <- as.integer(x)
+  unit  <- x %/% 1000          # first digit
+  value <- x %%  1000          # remaining digits
+  age_years <- ifelse(unit == 4, value,           # already in years
+               ifelse(unit == 3, value / 12,      # months to years
+               ifelse(unit == 2, value / 365,     # days to years
+               ifelse(unit == 1, value / 8760,    # hours to years
+               NA_real_))))
+  age_years
+}
+
+df$age_years <- decode_age(df$NU_IDADE_N)
+
+# Age group (5-year bands)
+df$age_group <- cut(df$age_years,
+  breaks = c(0, 5, 15, 25, 35, 45, 55, 65, Inf),
+  labels = c("<5", "5-14", "15-24", "25-34", "35-44", "45-54", "55-64", "65+"),
+  right  = FALSE
+)
+```
+
+### Handling missing values
+
+DATASUS often uses empty strings (`""`) instead of `NA`. Convert them:
+
+```r
+# Replace all empty strings with NA across the entire data frame
+df[df == ""] <- NA
+
+# Check missing data per column
+missing_pct <- sort(colMeans(is.na(df)) * 100, decreasing = TRUE)
+print(round(missing_pct[missing_pct > 0], 1))
+```
+
+### Frequency tables and case counts
+
+```r
+# Cases by sex
+table(df$CS_SEXO)
+
+# Cases by race/ethnicity (CS_RACA)
+# 1=White, 2=Black, 3=Yellow, 4=Brown, 5=Indigenous
+table(df$CS_RACA)
+
+# Cases by state (SG_UF_NOT)
+sort(table(df$SG_UF_NOT), decreasing = TRUE)
+
+# Cross-tabulation: sex by outcome (EVOLUCAO)
+# 1=Cure, 2=Death, 3=Death by other causes, 9=Unknown
+table(Sex = df$CS_SEXO, Outcome = df$EVOLUCAO)
+
+# Incidence rate table: cases per state per year
+aggregate(cbind(cases = TP_NOT) ~ SG_UF_NOT + NU_ANO,
+          data  = df,
+          FUN   = length)
+```
+
+### Combining multiple DBC files (full year from monthly files)
+
+Some DATASUS systems distribute data in monthly files. Combine them easily:
+
+```r
+library(dbcturbo)
+
+# List all monthly DBC files in a folder
+files <- list.files("dbc/2023/", pattern = "\\.dbc$", full.names = TRUE)
+
+# Read and combine all into a single data frame
+df_year <- do.call(rbind, lapply(files, read_dbc))
+cat("Total records:", nrow(df_year), "\n")
+
+# Alternative with data.table (faster for large files)
+library(data.table)
+dt_year <- rbindlist(lapply(files, read_dbc))
+```
+
+### Fast analytical queries on Parquet files with DuckDB
+
+For very large datasets, use DuckDB to run SQL directly on Parquet files
+**without loading everything into RAM**:
+
+```r
+library(duckdb)
+library(dbcturbo)
+
+# Convert once
+dbc_to_parquet("DENGBR23.dbc", "dengue_2023.parquet")
+
+# Query without loading the full file
+con <- dbConnect(duckdb())
+result <- dbGetQuery(con, "
+  SELECT
+    SG_UF_NOT,
+    COUNT(*)          AS total_cases,
+    SUM(CASE WHEN EVOLUCAO = '2' THEN 1 ELSE 0 END) AS deaths
+  FROM 'dengue_2023.parquet'
+  GROUP BY SG_UF_NOT
+  ORDER BY total_cases DESC
+")
+print(result)
+dbDisconnect(con)
+```
+
+### Export to formatted XLSX (Excel)
+
+When your filtered data fits within Excel's limits, export to `.xlsx` with
+formatting using the `openxlsx` package:
+
+```r
+library(dbcturbo)
+library(openxlsx)
+
+df <- read_dbc("DENGBR23.dbc")
+
+# Filter to a manageable subset
+df_rs_2023 <- df[df$SG_UF_NOT == "43" & df$NU_ANO == "2023", ]
+
+# Create a formatted workbook
+wb <- createWorkbook()
+addWorksheet(wb, "Dengue_RS_2023")
+
+# Style for the header row
+header_style <- createStyle(
+  fontColour = "#FFFFFF",
+  fgFill     = "#2E4057",
+  halign     = "CENTER",
+  textDecoration = "Bold"
+)
+
+writeData(wb, "Dengue_RS_2023", df_rs_2023)
+addStyle(wb, "Dengue_RS_2023", header_style,
+         rows = 1, cols = 1:ncol(df_rs_2023), gridExpand = TRUE)
+
+saveWorkbook(wb, "dengue_RS_2023.xlsx", overwrite = TRUE)
+```
+
+## Performance Comparison
+
+| Approach                | Peak RAM   | Time (1M rows) | Parallelisable |
+|-------------------------|-----------|----------------|----------------|
+| `read.dbc`              | ~4 GB      | ~45 s          | No             |
+| `dbcturbo::read_dbc`    | ~600 MB    | ~15 s          | Yes            |
+| `dbcturbo::dbc_to_csv`  | **< 50 MB**| ~12 s          | Yes            |
+
+## DBC Format — How Decompression Works
+
+A `.dbc` file from DATASUS is a `.dbf` (dBase) file compressed with the
+**PKWare Implode** algorithm (also known as *blast* in the technical literature).
+
+Binary structure:
+
+```
+[Bytes 0-7]   -> DBF header (version, date, record count, header size)
+[Bytes 8-9]   -> uint16_t little-endian: total DBF header size
+[Bytes 10-N]  -> Field descriptors (32 bytes each) + 0x0D terminator
+[N+1 .. N+4]  -> CRC32 (4 bytes — ignored during decompression)
+[N+5 .. EOF]  -> Compressed payload using PKWare Implode
+```
+
+The `blast()` function (Mark Adler, 2003) decodes this payload using a
+4096-byte sliding window (`MAXWIN`) with canonical Huffman coding.
+
+## Thread Safety
+
+All engine state is stack-allocated (`struct state` in `blast.c`). There are no
+global mutable variables. `dbc_to_csv()` and `dbc2dbf()` can be called in
+parallel via `parallel::mclapply()` without race conditions.
+

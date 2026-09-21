@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+authors:
+  - family-names: "Pimentel Peralta"
+    given-names: "Gumercindo"
+    orcid: "https://orcid.org/0000-0002-5896-3171"
+    email: "gumercindopimentel@gmail.com"
+  - family-names: "da Silva"
+    given-names: "Juliana"
+    orcid: "https://orcid.org/0000-0002-1089-6766"
+title: "dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files"
+version: 0.1.0
+date-released: 2026-05-24
+url: "https://github.com/GPimentel14/dbcturbo"
+repository-code: "https://github.com/GPimentel14/dbcturbo"
+license: "AGPL-3.0-or-later"
