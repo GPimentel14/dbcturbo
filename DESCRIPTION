@@ -1,8 +1,8 @@
 Package: dbcturbo
 Type: Package
-Title: High-Performance Streaming Reader for 'DATASUS' 'DBC' Files
-Version: 0.1.0
-Date: 2026-09-21
+Title: High-Performance Streaming Reader for 'DATASUS' DBC Files
+Version: 0.2.0
+Date: 2026-09-30
 Authors@R: c(
     person("Gumercindo", "Pimentel Peralta", email = "gumercindopimentel@gmail.com", 
            role = c("aut", "cre"), comment = c(ORCID = "0000-0002-5896-3171")),
@@ -15,10 +15,10 @@ Authors@R: c(
     person("Pablo", "Fonseca", role = "ctb",
            comment = "Author of blast-dbf"))
 Description: A modern, memory-efficient R package for reading and converting
-    'DBC' files produced by the Brazilian Ministry of Health's 'DATASUS' system.
-    'DBC' files are 'DBF' databases compressed with the 'PKWare' implode algorithm.
+    DBC files produced by the Brazilian Ministry of Health's 'DATASUS' system.
+    DBC files are DBF databases compressed with the 'PKWare' implode algorithm.
     Unlike 'read.dbc', this package processes files in streaming mode, never
-    loading the full dataset into RAM. It can export directly to 'CSV' or 'DBF'
+    loading the full dataset into RAM. It can export directly to CSV or DBF
     and provides R helpers for in-memory reading and Parquet conversion.
 License: AGPL-3
 URL: https://github.com/GPimentel14/dbcturbo

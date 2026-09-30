@@ -10,17 +10,18 @@
 [![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html)
 <!-- badges: end -->
 
-**dbcturbo** is an R package to inspect, read, and convert DATASUS `.dbc` files, with a streaming CSV/DBF conversion path and UTF-8 CSV output.
+**dbcturbo** is an R package to inspect, read, and convert DATASUS `.dbc` files, with direct streaming CSV/DBF conversion and UTF-8 CSV output.
 
-The C99 engine processes DBC input in bounded batches when writing CSV or DBF. `read_dbc()` intentionally materializes a data frame in memory, and `dbc_to_parquet()` uses a temporary CSV before conversion with Arrow.
+The C99 engine writes CSV rows directly from the decompression stream with bounded memory. `read_dbc()` uses a direct native reader for files up to 50 MiB by default and a CSV reader for larger files; it intentionally materializes its final data frame in memory. `dbc_to_parquet()` uses a temporary CSV before conversion with Arrow.
 
 ---
 
 ## ⚡ Why dbcturbo?
 
 - **Reads files with millions of records:** Process complete national databases (1.6M+ rows) in seconds.
-- **Streaming architecture:** True chunk-by-chunk decompress and write cycle — peak RAM never grows with file size.
-- **Bounded conversion memory:** CSV/DBF conversion uses a configurable record batch.
+- **Streaming architecture:** True chunk-by-chunk decompress and write cycle — peak RAM never grows with file size during CSV/DBF conversion.
+- **Small-file fast path:** Native decoding avoids CSV and DBF temporary files for low-latency reads.
+- **Bounded conversion memory:** CSV/DBF conversion keeps only one DBF record and its output buffer in memory.
 - **Clean UTF-8 output:** Automatic CP850/Latin1 transcoding with UTF-8 BOM — Portuguese characters (`ã`, `ç`, `é`) render perfectly in Excel.
 - **Parquet conversion:** Converts through a temporary CSV using `arrow`.
 - **Thread-safe conversion engine:** No global mutable C state; callers control any parallelism.
@@ -94,14 +95,15 @@ meta <- dbc_inspect("DENGBR23.dbc")
 cat("Records:", meta$nrecords, "| Columns:", nrow(meta$fields), "\n")
 #> Records: 1,645,956 | Columns: 121
 
-# Read directly into R (small to medium files)
-df <- read_dbc("DENGBR23.dbc")
+# Small files use the native C reader automatically (up to 50 MiB)
+df <- read_dbc("small_file.dbc")
 head(df)
 ```
 
 For large files, install the optional `data.table` package. `read_dbc()` will
-use it automatically, or request it explicitly with
-`engine = "data.table"`; use `engine = "base"` to force R's built-in reader.
+use it automatically above the native threshold, or request it explicitly with
+`engine = "data.table"`; use `engine = "native"` to force direct native
+decoding and `engine = "base"` to force R's built-in reader.
 
 ```r
 install.packages("data.table")
@@ -235,7 +237,8 @@ df$delay_days <- as.numeric(df$DT_NOTIFIC - df$DT_SIN_PRI)
 result <- dbc_batch_to_csv(
   input_dir  = "dbc/2023/",
   output_dir = "csv/2023/",
-  recursive  = TRUE
+  recursive  = TRUE,
+  workers    = 4L # macOS/Linux; use 1L on Windows
 )
 ```
 
@@ -283,7 +286,7 @@ If you use `dbcturbo` in your research or institutional pipelines, please cite i
   title  = {dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files},
   author = {Gumercindo {Pimentel Peralta} and Juliana {da Silva}},
   year   = {2026},
-  note   = {R package version 0.1.0},
+  note   = {R package version 0.2.0},
   url    = {https://github.com/GPimentel14/dbcturbo},
 }
 ```

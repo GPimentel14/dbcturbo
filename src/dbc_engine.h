@@ -29,6 +29,8 @@ typedef struct {
 } dbf_header_t;
 
 typedef void (*dbc_progress_cb)(int64_t records_done, int64_t records_total, void *user_data);
+typedef int (*dbc_record_cb)(const unsigned char *record, int64_t index,
+                             void *user_data);
 
 typedef enum {
     DBC_OK              =  0,
@@ -62,6 +64,12 @@ dbc_error_t dbc_inspect(const char *input_path,
                         char *field_types, uint8_t *field_widths,
                         uint8_t *field_decs, int *nfields, uint32_t *nrecords,
                         int max_fields, char *error_buf, size_t error_buf_sz);
+
+/* Decompress DBF records directly to a caller callback. The callback receives
+ * complete DBF records, avoiding an intermediate DBF file. */
+dbc_error_t dbc_read_records(const char *input_path, uint16_t record_size,
+                             uint32_t expected_records, dbc_record_cb record_cb,
+                             void *user_data, char *error_buf, size_t error_buf_sz);
 
 #ifdef __cplusplus
 }

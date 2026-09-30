@@ -376,6 +376,17 @@ test_that("read_dbc supports column selection and type-control", {
   }
 })
 
+test_that("native reader matches the CSV route and auto-selects for small files", {
+  dbc <- .sample_dbc()
+  native <- read_dbc(dbc, engine = "native", coerce_types = FALSE)
+  csv <- read_dbc(dbc, engine = "base", coerce_types = FALSE)
+
+  expect_s3_class(native, "data.frame")
+  expect_equal(native, as.data.frame(lapply(csv, trimws), check.names = FALSE))
+  expect_equal(read_dbc(dbc, coerce_types = FALSE), native)
+  expect_error(read_dbc(dbc, native_threshold = -1), "non-negative")
+})
+
 test_that("type coercion handles DBF scalar representations", {
   dates <- dbcturbo:::.coerce_column(c("20240101", "00000000", ""), "D", 0L)
   expect_s3_class(dates, "Date")
@@ -409,6 +420,24 @@ test_that("dbc_batch_to_csv converts a directory and preserves subdirectories", 
   expect_true(file.exists(file.path(output_dir, "nested", "second.csv")))
   expect_error(dbc_batch_to_csv(input_dir, output_dir, recursive = TRUE),
                "already exist")
+})
+
+test_that("dbc_batch_to_csv supports field selection and Unix workers", {
+  skip_if(.Platform$OS.type == "windows", "mclapply is unavailable on Windows")
+  input_dir <- tempfile("dbc-workers-input-")
+  output_dir <- tempfile("dbc-workers-output-")
+  dir.create(input_dir)
+  on.exit(unlink(c(input_dir, output_dir), recursive = TRUE), add = TRUE)
+
+  fixture <- .sample_dbc()
+  file.copy(fixture, file.path(input_dir, "first.dbc"))
+  file.copy(fixture, file.path(input_dir, "second.dbc"))
+  selected <- dbc_inspect(fixture)$fields$name[1L]
+
+  result <- dbc_batch_to_csv(input_dir, output_dir, cols = selected, workers = 2L)
+  expect_equal(nrow(result), 2L)
+  expect_true(all(file.exists(result$output_file)))
+  expect_equal(names(utils::read.csv(result$output_file[[1L]])), selected)
 })
 
 test_that("dbc_batch_to_csv returns a typed empty result", {

@@ -25,11 +25,10 @@ field metadata and the total record count. The compressed data payload
 is never touched, making this function very fast even for large files.
 }
 \examples{
-\dontrun{
-meta <- dbc_inspect("SIM_RS_2024.dbc")
-cat(meta$nrecords, "records\n")
-print(meta$fields)
-}
+dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+meta <- dbc_inspect(dbc)
+meta$nrecords
+head(meta$fields)
 
 }
 \seealso{

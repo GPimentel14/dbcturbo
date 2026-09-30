@@ -9,8 +9,8 @@ authors:
     given-names: "Juliana"
     orcid: "https://orcid.org/0000-0002-1089-6766"
 title: "dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files"
-version: 0.1.0
-date-released: 2026-05-24
+version: 0.2.0
+date-released: 2026-09-30
 url: "https://github.com/GPimentel14/dbcturbo"
 repository-code: "https://github.com/GPimentel14/dbcturbo"
 license: "AGPL-3.0-or-later"

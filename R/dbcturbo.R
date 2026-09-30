@@ -18,9 +18,11 @@
 #'   descriptive error message.
 #'
 #' @examples
-#' \dontrun{
-#' dbc2dbf("SINAN_LEPTO_RS_2024.dbc", "SINAN_LEPTO_RS_2024.dbf")
-#' }
+#' dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#' dbf <- tempfile(fileext = ".dbf")
+#' dbc2dbf(dbc, dbf)
+#' file.exists(dbf)
+#' unlink(dbf)
 #'
 #' @seealso \code{\link{dbc_to_csv}}, \code{\link{dbc_inspect}}
 #' @export
@@ -65,20 +67,11 @@ dbc2dbf <- function(input_file, output_file) {
 #'   descriptive error message.
 #'
 #' @examples
-#' \dontrun{
-#' # Simple usage: just provide input and output paths
-#' dbc_to_csv("SINASC_RS_2024.dbc", "SINASC_RS_2024.csv")
-#'
-#' # Advanced usage: with custom batch size and verbose mode
-#' dbc_to_csv(
-#'   input_file  = "SINASC_RS_2024.dbc",
-#'   output_file = "SINASC_RS_2024.csv",
-#'   batch_size  = 10000L,
-#'   verbose     = TRUE
-#' )
-#' library(data.table)
-#' dt <- fread("SINASC_RS_2024.csv")
-#' }
+#' dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#' csv <- tempfile(fileext = ".csv")
+#' dbc_to_csv(dbc, csv)
+#' head(utils::read.csv(csv, fileEncoding = "UTF-8"))
+#' unlink(csv)
 #'
 #' @seealso \code{\link{dbc2dbf}}, \code{\link{dbc_inspect}}
 #' @export
@@ -130,12 +123,12 @@ dbc_to_csv <- function(input_file, output_file,
     nrec  <- if (!is.null(meta)) meta$nrecords else 0L
     ncols <- if (!is.null(meta)) nrow(meta$fields) else 0L
 
-    cat(sprintf("\n\u2500\u2500 dbcturbo streaming engine \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"))
-    cat(sprintf(" \u2022 Input:    %s (%s)\n", basename(input_file), .format_bytes(finfo$size)))
+    message(sprintf("\n\u2500\u2500 dbcturbo streaming engine \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"))
+    message(sprintf(" \u2022 Input:    %s (%s)\n", basename(input_file), .format_bytes(finfo$size)))
     if (nrec > 0L) {
-      cat(sprintf(" \u2022 Records:  %s rows | %d columns\n", format(nrec, big.mark = ","), ncols))
+      message(sprintf(" \u2022 Records:  %s rows | %d columns\n", format(nrec, big.mark = ","), ncols))
     }
-    cat(sprintf(" \u2022 Output:   %s\n", disp_name))
+    message(sprintf(" \u2022 Output:   %s\n", disp_name))
 
     t0 <- proc.time()
     pb <- utils::txtProgressBar(style = 3)
@@ -145,7 +138,7 @@ dbc_to_csv <- function(input_file, output_file,
         close(pb)
         elapsed <- (proc.time() - t0)[["elapsed"]]
         speed <- if (elapsed > 0.01 && total > 0) sprintf(" (%.0f rows/s)", total / elapsed) else ""
-        cat(sprintf(" \u2714 Conversion completed in %.2fs%s\n\n", elapsed, speed))
+        message(sprintf(" \u2714 Conversion completed in %.2fs%s\n\n", elapsed, speed))
       }
     }
   }
@@ -174,11 +167,10 @@ dbc_to_csv <- function(input_file, output_file,
 #' }
 #'
 #' @examples
-#' \dontrun{
-#' meta <- dbc_inspect("SIM_RS_2024.dbc")
-#' cat(meta$nrecords, "records\n")
-#' print(meta$fields)
-#' }
+#' dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#' meta <- dbc_inspect(dbc)
+#' meta$nrecords
+#' head(meta$fields)
 #'
 #' @seealso \code{\link{dbc_to_csv}}, \code{\link{dbc2dbf}}
 #' @export
@@ -191,9 +183,10 @@ dbc_inspect <- function(input_file) {
 
 #' Read a DATASUS DBC file into an R data frame
 #'
-#' High-level convenience wrapper that streams the \code{.dbc} file to a
-#' temporary CSV via \code{\link{dbc_to_csv}} and then reads it with
-#' \code{data.table::fread()} (if available) or \code{utils::read.csv()}.
+#' High-level convenience wrapper. The native engine decodes small files
+#' directly into R columns without temporary files. Larger files use a
+#' temporary CSV and \code{data.table::fread()} (if available) or
+#' \code{utils::read.csv()}.
 #'
 #' For files with more than one million records, use \code{\link{dbc_to_csv}}
 #' directly and load the resulting CSV with \code{arrow::read_csv_arrow()} or
@@ -224,27 +217,29 @@ dbc_inspect <- function(input_file) {
 #'       \code{"F"}/\code{"N"}/\code{"0"} → \code{FALSE}; others → \code{NA}).
 #'     \item \code{C} (character) → unchanged.
 #'   }
-#' @param engine Character string selecting the CSV reader: \code{"auto"}
-#'   (default) uses \pkg{data.table} when installed and otherwise R base;
+#' @param engine Character string selecting the reader. \code{"auto"}
+#'   (default) uses the native engine for files no larger than
+#'   \code{native_threshold}, then \pkg{data.table} when installed and R base
+#'   otherwise. \code{"native"} always uses direct native decoding;
 #'   \code{"data.table"} requires \pkg{data.table}; \code{"base"} always
 #'   uses \code{utils::read.csv()}.
+#' @param native_threshold Non-negative number of bytes. In \code{"auto"}
+#'   mode, files at or below this size use the native engine. Defaults to
+#'   50 MiB. Set to \code{0} to always use the CSV route in \code{"auto"}.
 #' @param ...        Additional arguments forwarded to the CSV reader.
 #'
 #' @return A \code{data.frame} or \code{data.table} (if \pkg{data.table}
 #'   is installed).
 #'
 #' @examples
-#' \dontrun{
-#' # All columns, types coerced automatically
-#' df <- read_dbc("DENGBR23.dbc")
-#' class(df$DT_NOTIFIC)   # "Date"
-#' class(df$NU_IDADE_N)   # "integer"
+#' dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#' df <- read_dbc(dbc)
+#' head(df)
 #'
-#' # Only a subset of columns
-#' df <- read_dbc("DENGBR23.dbc",
-#'                cols = c("DT_NOTIFIC", "SG_UF_NOT", "CLASSI_FIN"))
-#' ncol(df)  # 3
-#' }
+#' # Read a subset of fields.
+#' fields <- dbc_inspect(dbc)$fields$name[1:3]
+#' selected <- read_dbc(dbc, cols = fields)
+#' names(selected)
 #'
 #' @export
 read_dbc <- function(file,
@@ -253,12 +248,20 @@ read_dbc <- function(file,
                      verbose       = FALSE,
                      cols          = NULL,
                      coerce_types  = TRUE,
-                     engine        = c("auto", "data.table", "base"),
+                     engine        = c("auto", "native", "data.table", "base"),
+                     native_threshold = 50 * 1024^2,
                      ...) {
 
   .assert_scalar_logical(verbose, "verbose")
   .assert_scalar_logical(coerce_types, "coerce_types")
+  if (!is.null(encoding)) .assert_scalar_string(encoding, "encoding")
+  if (!is.numeric(native_threshold) || length(native_threshold) != 1L ||
+      is.na(native_threshold) || !is.finite(native_threshold) || native_threshold < 0)
+    stop("'native_threshold' must be a non-negative finite number of bytes")
   engine <- match.arg(engine)
+  .assert_scalar_string(file, "file")
+  file <- normalizePath(file, mustWork = TRUE)
+  extra_args <- list(...)
 
   # ── Validate cols ────────────────────────────────────────────────────────────
   if (!is.null(cols)) {
@@ -267,8 +270,15 @@ read_dbc <- function(file,
   }
 
   # ── Get field metadata (needed for cols validation and/or type coercion) ─────
+  use_native <- engine == "native" ||
+    (engine == "auto" && native_threshold > 0 && !length(extra_args) &&
+       file.info(file)$size <= native_threshold)
+
+  if (use_native && length(extra_args))
+    stop("additional CSV-reader arguments in '...' are not supported by the native engine")
+
   meta <- NULL
-  if (coerce_types || !is.null(cols)) {
+  if (coerce_types || !is.null(cols) || use_native) {
     meta <- tryCatch(dbc_inspect(file), error = function(e) NULL)
   }
 
@@ -280,43 +290,61 @@ read_dbc <- function(file,
            "\nAvailable fields: ", paste(meta$fields$name, collapse = ", "))
   }
 
-  # ── Stream DBC → temp CSV ────────────────────────────────────────────────────
-  tmp <- tempfile(fileext = ".csv")
-  on.exit(unlink(tmp), add = TRUE)
-  dbc_to_csv(file, tmp,
-             batch_size = batch_size,
-             encoding   = encoding,
-             cols       = cols,
-             verbose    = verbose)
+  if (use_native) {
+    selected_fields <- if (is.null(cols)) NULL else as.integer(match(cols, meta$fields$name) - 1L)
+    df <- .Call("C_dbc_read_native", file, selected_fields)
 
-  # ── Read CSV ─────────────────────────────────────────────────────────────────
-  # Start from character data so DBF metadata controls type conversion below.
-  extra_args <- list(...)
-  if (!("colClasses" %in% names(extra_args))) {
-    extra_args$colClasses <- "character"
-  }
-
-  use_data_table <- switch(
-    engine,
-    "auto" = requireNamespace("data.table", quietly = TRUE),
-    "data.table" = {
-      if (!requireNamespace("data.table", quietly = TRUE)) {
-        stop("'engine = \"data.table\"' requires the 'data.table' package. ",
-             "Install it with install.packages(\"data.table\").")
+    # Native C output preserves source bytes; transcode text fields to UTF-8
+    # in R so its public result matches the CSV route.
+    if (!is.null(meta)) {
+      source_encoding <- if (is.null(encoding)) "CP850" else encoding
+      active <- if (is.null(cols)) meta$fields else meta$fields[match(cols, meta$fields$name), ]
+      for (i in seq_len(nrow(active))) {
+        if (active$type[i] == "C" && active$name[i] %in% names(df)) {
+          df[[active$name[i]]] <- iconv(df[[active$name[i]]], from = source_encoding,
+                                         to = "UTF-8", sub = "byte")
+        }
       }
-      TRUE
-    },
-    "base" = FALSE
-  )
-
-  if (use_data_table) {
-    read_args <- c(list(input = tmp, encoding = "UTF-8", select = cols), extra_args)
-    df <- do.call(data.table::fread, read_args)
+    }
   } else {
-    read_args <- c(list(file = tmp, fileEncoding = "UTF-8", stringsAsFactors = FALSE), extra_args)
-    df <- do.call(utils::read.csv, read_args)
-    if (!is.null(cols))
-      df <- df[, intersect(cols, names(df)), drop = FALSE]
+    # ── Stream DBC → temp CSV ──────────────────────────────────────────────────
+    tmp <- tempfile(fileext = ".csv")
+    on.exit(unlink(tmp), add = TRUE)
+    dbc_to_csv(file, tmp,
+               batch_size = batch_size,
+               encoding   = encoding,
+               cols       = cols,
+               verbose    = verbose)
+
+    # ── Read CSV ───────────────────────────────────────────────────────────────
+    # Start from character data so DBF metadata controls type conversion below.
+    if (!("colClasses" %in% names(extra_args))) {
+      extra_args$colClasses <- "character"
+    }
+
+    use_data_table <- switch(
+      engine,
+      "auto" = requireNamespace("data.table", quietly = TRUE),
+      "data.table" = {
+        if (!requireNamespace("data.table", quietly = TRUE)) {
+          stop("'engine = \"data.table\"' requires the 'data.table' package. ",
+               "Install it with install.packages(\"data.table\").")
+        }
+        TRUE
+      },
+      "base" = FALSE,
+      "native" = FALSE
+    )
+
+    if (use_data_table) {
+      read_args <- c(list(input = tmp, encoding = "UTF-8", select = cols), extra_args)
+      df <- do.call(data.table::fread, read_args)
+    } else {
+      read_args <- c(list(file = tmp, fileEncoding = "UTF-8", stringsAsFactors = FALSE), extra_args)
+      df <- do.call(utils::read.csv, read_args)
+      if (!is.null(cols))
+        df <- df[, intersect(cols, names(df)), drop = FALSE]
+    }
   }
 
   # ── Type coercion ─────────────────────────────────────────────────────────
@@ -360,23 +388,34 @@ read_dbc <- function(file,
 #'   \code{\link{dbc_to_csv}}.
 #' @param encoding Character string or \code{NULL}. Passed to
 #'   \code{\link{dbc_to_csv}}.
+#' @param cols Character vector or \code{NULL}. Optional fields to write for
+#'   every input file. Passed to \code{\link{dbc_to_csv}}.
 #' @param overwrite Logical. Replace existing CSV files? Default \code{FALSE}.
 #' @param verbose Logical. Print per-file conversion progress? Default
 #'   \code{FALSE}.
+#' @param workers Positive integer. Number of files to convert concurrently on
+#'   macOS and Linux. Defaults to \code{1L}. Windows uses sequential execution
+#'   because \code{parallel::mclapply()} is not available there.
 #'
 #' @return A data frame with one row per converted file and columns
 #'   \code{input_file} and \code{output_file}. For an empty input directory,
 #'   returns a zero-row data frame with those columns.
 #'
 #' @examples
-#' \dontrun{
-#' result <- dbc_batch_to_csv("data/dbc", "data/csv", recursive = TRUE)
-#' }
+#' input_dir <- tempfile("dbc-input-")
+#' output_dir <- tempfile("dbc-output-")
+#' dir.create(input_dir)
+#' file.copy(system.file("extdata", "sids.dbc", package = "dbcturbo"),
+#'           file.path(input_dir, "sids.dbc"))
+#' result <- dbc_batch_to_csv(input_dir, output_dir)
+#' result
+#' unlink(c(input_dir, output_dir), recursive = TRUE)
 #' @export
 dbc_batch_to_csv <- function(input_dir, output_dir,
                              pattern = "\\.dbc$", recursive = FALSE,
                              batch_size = 4096L, encoding = NULL,
-                             overwrite = FALSE, verbose = FALSE) {
+                             cols = NULL, overwrite = FALSE, verbose = FALSE,
+                             workers = 1L) {
   .assert_scalar_string(input_dir, "input_dir")
   .assert_scalar_string(output_dir, "output_dir")
   .assert_scalar_string(pattern, "pattern")
@@ -384,6 +423,9 @@ dbc_batch_to_csv <- function(input_dir, output_dir,
   .assert_scalar_logical(overwrite, "overwrite")
   .assert_scalar_logical(verbose, "verbose")
   batch_size <- .assert_positive_integer(batch_size, "batch_size")
+  workers <- .assert_positive_integer(workers, "workers")
+  if (!is.null(cols) && (!is.character(cols) || !length(cols) || anyNA(cols)))
+    stop("'cols' must be a non-empty character vector of field names, or NULL")
 
   if (!dir.exists(input_dir))
     stop("'input_dir' does not exist or is not a directory")
@@ -419,9 +461,25 @@ dbc_batch_to_csv <- function(input_dir, output_dir,
       stop("Could not create output directory: ", directory)
   }
 
-  for (i in seq_along(input_files)) {
+  convert_one <- function(i) {
     dbc_to_csv(input_files[[i]], output_files[[i]], batch_size = batch_size,
-               encoding = encoding, verbose = verbose)
+               encoding = encoding, cols = cols, verbose = verbose)
+    NULL
+  }
+
+  if (workers > 1L) {
+    if (.Platform$OS.type == "windows") {
+      stop("'workers > 1' is not supported on Windows; use workers = 1L or a Windows-compatible parallel backend.")
+    }
+    result <- parallel::mclapply(seq_along(input_files), convert_one,
+                                 mc.cores = min(workers, length(input_files)),
+                                 mc.preschedule = FALSE)
+    failed <- vapply(result, inherits, logical(1), what = "try-error")
+    if (any(failed))
+      stop("One or more DBC conversions failed: ",
+           paste(input_files[failed], collapse = ", "))
+  } else {
+    for (i in seq_along(input_files)) convert_one(i)
   }
 
   data.frame(input_file = input_files, output_file = output_files,
@@ -453,26 +511,14 @@ dbc_batch_to_csv <- function(input_dir, output_dir,
 #'   is not installed.
 #'
 #' @examples
-#' \dontrun{
-#' # You only need to provide the input and output paths.
-#' # The technical settings (batch_size, encoding) are handled automatically.
-#'
-#' library(dbcturbo)
-#' library(arrow)
-#'
-#' dbc_to_parquet(
-#'   input_file = "/DENGBR24.dbc", 
-#'   output_file = "/DENGBR24.parquet"
-#' )
-#'
-#' datos <- read_parquet("/DENGBR24.parquet")
-#' View(datos)
-#' head(datos)
-#' dim(datos) 
-#' ncol(datos)
-#' nrow(datos)
-#' names(datos)
-#' summary(datos)
+#' \donttest{
+#' if (requireNamespace("arrow", quietly = TRUE)) {
+#'   dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#'   parquet <- tempfile(fileext = ".parquet")
+#'   dbc_to_parquet(dbc, parquet)
+#'   arrow::read_parquet(parquet)
+#'   unlink(parquet)
+#' }
 #' }
 #'
 #' @export

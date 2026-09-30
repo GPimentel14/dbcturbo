@@ -4,9 +4,9 @@
 \name{dbcturbo-package}
 \alias{dbcturbo}
 \alias{dbcturbo-package}
-\title{dbcturbo: High-Performance Streaming Reader for 'DATASUS' 'DBC' Files}
+\title{dbcturbo: High-Performance Streaming Reader for 'DATASUS' DBC Files}
 \description{
-A modern, memory-efficient R package for reading and converting 'DBC' files produced by the Brazilian Ministry of Health's 'DATASUS' system. 'DBC' files are 'DBF' databases compressed with the 'PKWare' implode algorithm. Unlike 'read.dbc', this package processes files in streaming mode, never loading the full dataset into RAM. It can export directly to 'CSV' or 'DBF' and provides R helpers for in-memory reading and Parquet conversion.
+A modern, memory-efficient R package for reading and converting DBC files produced by the Brazilian Ministry of Health's 'DATASUS' system. DBC files are DBF databases compressed with the 'PKWare' implode algorithm. Unlike 'read.dbc', this package processes files in streaming mode, never loading the full dataset into RAM. It can export directly to CSV or DBF and provides R helpers for in-memory reading and Parquet conversion.
 }
 \seealso{
 Useful links:

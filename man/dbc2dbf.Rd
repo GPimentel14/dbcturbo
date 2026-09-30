@@ -24,9 +24,11 @@ The compressed payload is processed in 64 KB chunks using the PKWare
 Implode algorithm (\code{blast.c}, Mark Adler).
 }
 \examples{
-\dontrun{
-dbc2dbf("SINAN_LEPTO_RS_2024.dbc", "SINAN_LEPTO_RS_2024.dbf")
-}
+dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+dbf <- tempfile(fileext = ".dbf")
+dbc2dbf(dbc, dbf)
+file.exists(dbf)
+unlink(dbf)
 
 }
 \seealso{

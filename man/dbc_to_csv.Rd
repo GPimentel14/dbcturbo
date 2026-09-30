@@ -54,20 +54,11 @@ The output CSV is prefixed with a UTF-8 BOM so that Microsoft Excel
 opens it with correct encoding without additional configuration.
 }
 \examples{
-\dontrun{
-# Simple usage: just provide input and output paths
-dbc_to_csv("SINASC_RS_2024.dbc", "SINASC_RS_2024.csv")
-
-# Advanced usage: with custom batch size and verbose mode
-dbc_to_csv(
-  input_file  = "SINASC_RS_2024.dbc",
-  output_file = "SINASC_RS_2024.csv",
-  batch_size  = 10000L,
-  verbose     = TRUE
-)
-library(data.table)
-dt <- fread("SINASC_RS_2024.csv")
-}
+dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+csv <- tempfile(fileext = ".csv")
+dbc_to_csv(dbc, csv)
+head(utils::read.csv(csv, fileEncoding = "UTF-8"))
+unlink(csv)
 
 }
 \seealso{

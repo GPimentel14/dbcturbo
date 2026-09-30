@@ -9,6 +9,9 @@
 .env.*
 !.env.example
 
+# Local release helper
+/actualizar.sh
+
 # Native build products
 src/*.o
 src/*.so

@@ -44,26 +44,14 @@ This is the recommended workflow for Big Data and epidemiological research,
 as Parquet files are heavily compressed, columnar, and preserve types.
 }
 \examples{
-\dontrun{
-# You only need to provide the input and output paths.
-# The technical settings (batch_size, encoding) are handled automatically.
-
-library(dbcturbo)
-library(arrow)
-
-dbc_to_parquet(
-  input_file = "/DENGBR24.dbc", 
-  output_file = "/DENGBR24.parquet"
-)
-
-datos <- read_parquet("/DENGBR24.parquet")
-View(datos)
-head(datos)
-dim(datos) 
-ncol(datos)
-nrow(datos)
-names(datos)
-summary(datos)
+\donttest{
+if (requireNamespace("arrow", quietly = TRUE)) {
+  dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+  parquet <- tempfile(fileext = ".parquet")
+  dbc_to_parquet(dbc, parquet)
+  arrow::read_parquet(parquet)
+  unlink(parquet)
+}
 }
 
 }

@@ -69,6 +69,38 @@ static int blast_write_tmp_cb(void *ctx, unsigned char *buf, unsigned len)
     return fwrite(buf, 1, len, c->tmp) != len;
 }
 
+typedef struct {
+    unsigned char *record;
+    uint16_t record_size;
+    size_t filled;
+    uint32_t expected_records;
+    uint32_t records_seen;
+    dbc_record_cb record_cb;
+    void *user_data;
+    int callback_failed;
+} record_stream_ctx_t;
+
+static int blast_write_record_cb(void *ctx, unsigned char *buf, unsigned len)
+{
+    record_stream_ctx_t *c = (record_stream_ctx_t *)ctx;
+    for (unsigned i = 0; i < len; i++) {
+        if (c->records_seen >= c->expected_records)
+            break; /* Ignore the DBF end marker after the final record. */
+
+        c->record[c->filled++] = buf[i];
+        if (c->filled == c->record_size) {
+            if (c->record_cb(c->record, (int64_t)c->records_seen,
+                             c->user_data) != 0) {
+                c->callback_failed = 1;
+                return 1;
+            }
+            c->records_seen++;
+            c->filled = 0;
+        }
+    }
+    return 0;
+}
+
 /* ── DBC header-size reader ─────────────────────────────────────────────────
  * Bytes 8-9 of a DBC file encode the embedded DBF header size as a
  * little-endian uint16_t.  HEADER_OFFSET == 8, defined in blast.h.
@@ -96,6 +128,82 @@ static int read_dbf_header_size(FILE *fp, uint16_t *out_size,
     }
     *out_size = sz;
     return 0;
+}
+
+/* ── dbc_read_records ───────────────────────────────────────────────────────
+ * Streams decompressed DBF records directly to a callback. This is the common
+ * primitive used by the native R reader; it never creates a DBF or CSV file.
+ * ───────────────────────────────────────────────────────────────────────── */
+dbc_error_t dbc_read_records(const char *input_path, uint16_t record_size,
+                             uint32_t expected_records, dbc_record_cb record_cb,
+                             void *user_data, char *err_buf, size_t err_sz)
+{
+    if (record_size == 0 || !record_cb) {
+        fmt_error(err_buf, err_sz, "invalid record stream configuration");
+        return DBC_ERR_INVALID_DBF;
+    }
+
+    FILE *fin = fopen(input_path, "rb");
+    if (!fin) {
+        fmt_error(err_buf, err_sz, "cannot open '%s': %s",
+                  input_path, strerror(errno));
+        return DBC_ERR_OPEN_IN;
+    }
+
+    uint16_t hdr_sz = 0;
+    dbc_error_t rc = DBC_OK;
+    unsigned char *record = NULL;
+
+    if (read_dbf_header_size(fin, &hdr_sz, err_buf, err_sz) != 0) {
+        rc = DBC_ERR_READ_HDR;
+        goto cleanup;
+    }
+    if (fseek(fin, (long)hdr_sz + (long)CRC_OFFSET, SEEK_SET) != 0) {
+        fmt_error(err_buf, err_sz, "fseek to payload failed: %s", strerror(errno));
+        rc = DBC_ERR_SEEK;
+        goto cleanup;
+    }
+
+    record = (unsigned char *)malloc(record_size);
+    if (!record) {
+        fmt_error(err_buf, err_sz, "malloc for record buffer failed");
+        rc = DBC_ERR_MEM;
+        goto cleanup;
+    }
+
+    record_stream_ctx_t out_ctx;
+    out_ctx.record = record;
+    out_ctx.record_size = record_size;
+    out_ctx.filled = 0;
+    out_ctx.expected_records = expected_records;
+    out_ctx.records_seen = 0;
+    out_ctx.record_cb = record_cb;
+    out_ctx.user_data = user_data;
+    out_ctx.callback_failed = 0;
+
+    blast_io_ctx_t in_ctx;
+    in_ctx.fp = fin;
+    int blast_rc = blast(blast_read_cb, &in_ctx, blast_write_record_cb, &out_ctx);
+    if (blast_rc != 0) {
+        if (out_ctx.callback_failed)
+            fmt_error(err_buf, err_sz, "record callback failed");
+        else
+            fmt_error(err_buf, err_sz, "decompression failed (code %d): %s",
+                      blast_rc, blast_error_string(blast_rc));
+        rc = DBC_ERR_DECOMP;
+        goto cleanup;
+    }
+    if (out_ctx.records_seen != expected_records || out_ctx.filled != 0) {
+        fmt_error(err_buf, err_sz,
+                  "decompressed %u complete records; expected %u",
+                  (unsigned)out_ctx.records_seen, (unsigned)expected_records);
+        rc = DBC_ERR_INVALID_DBF;
+    }
+
+cleanup:
+    free(record);
+    fclose(fin);
+    return rc;
 }
 
 /* ── dbc2dbf_stream ───────────────────────────────────────────────────────── */
@@ -354,12 +462,12 @@ static int write_csv_row(FILE *fout, const unsigned char *record,
  * Core conversion function. Streams records from the uncompressed DBF payload
  * to an output CSV file in batches to maintain O(1) memory complexity.
  * ─────────────────────────────────────────────────────────────────────────── */
-dbc_error_t dbc_to_csv_stream(const char *input_path, const char *output_path,
-                              const char *tmp_path,
-                              int batch_size, const char *encoding,
-                              const int *selected_fields, int nselected_fields,
-                              dbc_progress_cb progress_cb, void *user_data,
-                              char *err_buf, size_t err_sz)
+static dbc_error_t dbc_to_csv_via_temp(const char *input_path, const char *output_path,
+                                       const char *tmp_path,
+                                       int batch_size, const char *encoding,
+                                       const int *selected_fields, int nselected_fields,
+                                       dbc_progress_cb progress_cb, void *user_data,
+                                       char *err_buf, size_t err_sz)
 {
     encoding_mode_t enc_mode = ENC_CP850;
     if (encoding && encoding[0]) {
@@ -606,6 +714,153 @@ cleanup:
         fclose(ftmp);
         remove(effective_tmp);
     }
+    return rc;
+}
+
+typedef struct {
+    FILE *fout;
+    const dbf_field_t *fields;
+    const size_t *field_offsets;
+    const int *selected_fields;
+    int nselected_fields;
+    encoding_mode_t enc_mode;
+    int batch_size;
+    int64_t records_total;
+    dbc_progress_cb progress_cb;
+    void *user_data;
+    int write_failed;
+} csv_stream_ctx_t;
+
+static int csv_record_cb(const unsigned char *record, int64_t index, void *user_data)
+{
+    csv_stream_ctx_t *ctx = (csv_stream_ctx_t *)user_data;
+    if (record[0] != 0x2A &&
+        write_csv_row(ctx->fout, record, ctx->fields, ctx->field_offsets,
+                      ctx->selected_fields, ctx->nselected_fields,
+                      ctx->enc_mode) != 0) {
+        ctx->write_failed = 1;
+        return 1;
+    }
+    if (ctx->progress_cb &&
+        (((index + 1) % ctx->batch_size) == 0 || index + 1 == ctx->records_total))
+        ctx->progress_cb(index + 1, ctx->records_total, ctx->user_data);
+    return 0;
+}
+
+/* Direct DBC -> CSV writer. The old implementation remains above as an
+ * internal reference while this path avoids a full-sized DBF temporary file. */
+dbc_error_t dbc_to_csv_stream(const char *input_path, const char *output_path,
+                              const char *tmp_path,
+                              int batch_size, const char *encoding,
+                              const int *selected_fields, int nselected_fields,
+                              dbc_progress_cb progress_cb, void *user_data,
+                              char *err_buf, size_t err_sz)
+{
+    (void)tmp_path;
+    encoding_mode_t enc_mode = ENC_CP850;
+    if (encoding && encoding[0]) {
+        if (strcasecmp(encoding, "latin1") == 0 ||
+            strcasecmp(encoding, "ISO-8859-1") == 0 ||
+            strcasecmp(encoding, "CP1252") == 0 ||
+            strcasecmp(encoding, "windows-1252") == 0)
+            enc_mode = ENC_LATIN1;
+        else if (strcasecmp(encoding, "UTF-8") == 0 ||
+                 strcasecmp(encoding, "ASCII") == 0)
+            enc_mode = ENC_UTF8;
+    }
+    if (batch_size <= 0) batch_size = 4096;
+
+    char field_names[512][DBF_FIELD_NAME_LEN];
+    char field_types[512];
+    uint8_t field_widths[512], field_decs[512];
+    int nfields = 0;
+    uint32_t nrecords = 0;
+    dbc_error_t rc = dbc_inspect(input_path, field_names, field_types,
+                                 field_widths, field_decs, &nfields, &nrecords,
+                                 512, err_buf, err_sz);
+    if (rc != DBC_OK) return rc;
+
+    if (selected_fields) {
+        if (nselected_fields < 1) {
+            fmt_error(err_buf, err_sz, "at least one field must be selected");
+            return DBC_ERR_INVALID_DBF;
+        }
+        for (int i = 0; i < nselected_fields; i++) {
+            if (selected_fields[i] < 0 || selected_fields[i] >= nfields) {
+                fmt_error(err_buf, err_sz, "selected field index is out of bounds");
+                return DBC_ERR_INVALID_DBF;
+            }
+        }
+    } else {
+        nselected_fields = nfields;
+    }
+
+    dbf_field_t *fields = (dbf_field_t *)calloc((size_t)nfields, sizeof(dbf_field_t));
+    size_t *field_offsets = (size_t *)malloc((size_t)nfields * sizeof(size_t));
+    if (!fields || !field_offsets) {
+        free(fields);
+        free(field_offsets);
+        fmt_error(err_buf, err_sz, "malloc for DBF metadata failed");
+        return DBC_ERR_MEM;
+    }
+
+    size_t data_width = 0;
+    for (int i = 0; i < nfields; i++) {
+        memcpy(fields[i].name, field_names[i], DBF_FIELD_NAME_LEN - 1);
+        fields[i].type = field_types[i];
+        fields[i].length = field_widths[i];
+        fields[i].decimal_count = field_decs[i];
+        field_offsets[i] = data_width;
+        data_width += (size_t)field_widths[i];
+    }
+    if (data_width + 1 > UINT16_MAX) {
+        free(fields);
+        free(field_offsets);
+        fmt_error(err_buf, err_sz, "DBF record width is too large");
+        return DBC_ERR_INVALID_DBF;
+    }
+
+    FILE *fout = fopen(output_path, "wb");
+    if (!fout) {
+        free(fields);
+        free(field_offsets);
+        fmt_error(err_buf, err_sz, "cannot create '%s': %s", output_path, strerror(errno));
+        return DBC_ERR_OPEN_OUT;
+    }
+    if (fwrite("\xEF\xBB\xBF", 1, 3, fout) != 3 ||
+        write_csv_header(fout, fields, selected_fields, nselected_fields, enc_mode) != 0) {
+        fmt_error(err_buf, err_sz, "CSV header write failed: %s", strerror(errno));
+        fclose(fout);
+        free(fields);
+        free(field_offsets);
+        return DBC_ERR_WRITE_OUT;
+    }
+
+    csv_stream_ctx_t ctx;
+    ctx.fout = fout;
+    ctx.fields = fields;
+    ctx.field_offsets = field_offsets;
+    ctx.selected_fields = selected_fields;
+    ctx.nselected_fields = nselected_fields;
+    ctx.enc_mode = enc_mode;
+    ctx.batch_size = batch_size;
+    ctx.records_total = (int64_t)nrecords;
+    ctx.progress_cb = progress_cb;
+    ctx.user_data = user_data;
+    ctx.write_failed = 0;
+
+    rc = dbc_read_records(input_path, (uint16_t)(data_width + 1), nrecords,
+                          csv_record_cb, &ctx, err_buf, err_sz);
+    if (rc == DBC_ERR_DECOMP && ctx.write_failed) {
+        fmt_error(err_buf, err_sz, "CSV row write failed: %s", strerror(errno));
+        rc = DBC_ERR_WRITE_OUT;
+    }
+    if (fclose(fout) != 0 && rc == DBC_OK) {
+        fmt_error(err_buf, err_sz, "CSV close failed: %s", strerror(errno));
+        rc = DBC_ERR_WRITE_OUT;
+    }
+    free(fields);
+    free(field_offsets);
     return rc;
 }
 

@@ -6,7 +6,7 @@ bibentry(
     person("Juliana", "da Silva", comment = c(ORCID = "0000-0002-1089-6766"))
   ),
   year = "2026",
-  note = "R package version 0.1.0",
+  note = "R package version 0.2.0",
   url = "https://github.com/GPimentel14/dbcturbo",
-  textVersion = "Pimentel Peralta G, da Silva J (2026). dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files. R package version 0.1.0. https://github.com/GPimentel14/dbcturbo."
+  textVersion = "Pimentel Peralta G, da Silva J (2026). dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files. R package version 0.2.0. https://github.com/GPimentel14/dbcturbo."
 )

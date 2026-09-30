@@ -11,7 +11,8 @@ read_dbc(
   verbose = FALSE,
   cols = NULL,
   coerce_types = TRUE,
-  engine = c("auto", "data.table", "base"),
+  engine = c("auto", "native", "data.table", "base"),
+  native_threshold = 50 * 1024^2,
   ...
 )
 }
@@ -47,10 +48,16 @@ metadata:
   \item \code{C} (character) → unchanged.
 }}
 
-\item{engine}{Character string selecting the CSV reader: \code{"auto"}
-(default) uses \pkg{data.table} when installed and otherwise R base;
+\item{engine}{Character string selecting the reader. \code{"auto"}
+(default) uses the native engine for files no larger than
+\code{native_threshold}, then \pkg{data.table} when installed and R base
+otherwise. \code{"native"} always uses direct native decoding;
 \code{"data.table"} requires \pkg{data.table}; \code{"base"} always
 uses \code{utils::read.csv()}.}
+
+\item{native_threshold}{Non-negative number of bytes. In \code{"auto"}
+mode, files at or below this size use the native engine. Defaults to
+50 MiB. Set to \code{0} to always use the CSV route in \code{"auto"}.}
 
 \item{...}{Additional arguments forwarded to the CSV reader.}
 }
@@ -59,9 +66,10 @@ A \code{data.frame} or \code{data.table} (if \pkg{data.table}
   is installed).
 }
 \description{
-High-level convenience wrapper that streams the \code{.dbc} file to a
-temporary CSV via \code{\link{dbc_to_csv}} and then reads it with
-\code{data.table::fread()} (if available) or \code{utils::read.csv()}.
+High-level convenience wrapper. The native engine decodes small files
+directly into R columns without temporary files. Larger files use a
+temporary CSV and \code{data.table::fread()} (if available) or
+\code{utils::read.csv()}.
 }
 \details{
 For files with more than one million records, use \code{\link{dbc_to_csv}}
@@ -69,16 +77,13 @@ directly and load the resulting CSV with \code{arrow::read_csv_arrow()} or
 \code{data.table::fread()} for maximum performance.
 }
 \examples{
-\dontrun{
-# All columns, types coerced automatically
-df <- read_dbc("DENGBR23.dbc")
-class(df$DT_NOTIFIC)   # "Date"
-class(df$NU_IDADE_N)   # "integer"
+dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+df <- read_dbc(dbc)
+head(df)
 
-# Only a subset of columns
-df <- read_dbc("DENGBR23.dbc",
-               cols = c("DT_NOTIFIC", "SG_UF_NOT", "CLASSI_FIN"))
-ncol(df)  # 3
-}
+# Read a subset of fields.
+fields <- dbc_inspect(dbc)$fields$name[1:3]
+selected <- read_dbc(dbc, cols = fields)
+names(selected)
 
 }

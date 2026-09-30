@@ -15,6 +15,7 @@
 #include <Rinternals.h>
 #include <R_ext/Utils.h>   /* R_tmpnam(), R_TempDir */
 #include <stdint.h>
+#include <limits.h>
 
 #include "dbc_engine.h"
 
@@ -125,22 +126,137 @@ SEXP C_dbc_to_csv(SEXP r_input, SEXP r_output, SEXP r_batch,
      * and the POSIX-only limitation of mkstemp().
      * We get R's tempdir via Rf_eval() to avoid Rembedded.h dependency.
      * The returned string is malloc'd; freed via R_free_tmpnam() after use. */
-    SEXP r_tempdir = PROTECT(Rf_eval(Rf_lang1(Rf_install("tempdir")), R_GlobalEnv));
-    const char *tdir = CHAR(STRING_ELT(r_tempdir, 0));
-    char *rtmp = R_tmpnam("dbcturbo_", tdir);
-    UNPROTECT(1);
-
     char err_buf[512];
     err_buf[0] = '\0';
     dbc_error_t rc = dbc_to_csv_stream(in_path, out_path,
-                                       rtmp,
+                                       NULL,
                                        batch, encoding, selected_fields, nselected_fields,
                                        progress_cb_bridge, &pb,
                                        err_buf, sizeof(err_buf));
-    R_free_tmpnam(rtmp);
     if (rc != DBC_OK) throw_dbc_error(rc, err_buf);
 
     return Rf_ScalarLogical(TRUE);
+}
+
+/* ── C_dbc_read_native ─────────────────────────────────────────────────────
+ * Small-file fast path: decode DBF records directly into character vectors.
+ * Encoding and DBF type conversion remain in R so this has the same public
+ * semantics as the CSV engines, without creating DBF or CSV temporary files.
+ * ───────────────────────────────────────────────────────────────────────── */
+typedef struct {
+    SEXP columns;
+    const int *selected;
+    const size_t *field_offsets;
+    const uint8_t *field_widths;
+    int nselected;
+    R_xlen_t out_row;
+} native_read_ctx_t;
+
+static int native_record_cb(const unsigned char *record, int64_t index, void *user_data)
+{
+    (void)index;
+    native_read_ctx_t *ctx = (native_read_ctx_t *)user_data;
+    if (record[0] == 0x2A) return 0; /* deleted DBF record */
+
+    for (int j = 0; j < ctx->nselected; j++) {
+        int field = ctx->selected[j];
+        const unsigned char *cell = record + 1 + ctx->field_offsets[field];
+        int len = (int)ctx->field_widths[field];
+        int start = 0;
+        while (start < len && (cell[start] == ' ' || cell[start] == '\0')) start++;
+        while (len > 0 && (cell[len - 1] == ' ' || cell[len - 1] == '\0')) len--;
+        if (start >= len) {
+            SET_STRING_ELT(VECTOR_ELT(ctx->columns, j), ctx->out_row, NA_STRING);
+        } else {
+            SET_STRING_ELT(VECTOR_ELT(ctx->columns, j), ctx->out_row,
+                           Rf_mkCharLenCE((const char *)(cell + start), len - start,
+                                         CE_BYTES));
+        }
+    }
+    ctx->out_row++;
+    return 0;
+}
+
+SEXP C_dbc_read_native(SEXP r_input, SEXP r_selected_fields)
+{
+    const char *in_path = require_scalar_string(r_input, "file");
+    char field_names[DBC_MAX_FIELDS][DBF_FIELD_NAME_LEN];
+    char field_types[DBC_MAX_FIELDS];
+    uint8_t field_widths[DBC_MAX_FIELDS];
+    uint8_t field_decs[DBC_MAX_FIELDS];
+    int nfields = 0;
+    uint32_t nrecords = 0;
+    char err_buf[512] = {0};
+
+    dbc_error_t rc = dbc_inspect(in_path, field_names, field_types, field_widths,
+                                 field_decs, &nfields, &nrecords, DBC_MAX_FIELDS,
+                                 err_buf, sizeof(err_buf));
+    if (rc != DBC_OK) throw_dbc_error(rc, err_buf);
+    if (nrecords > INT_MAX)
+        Rf_error("native engine cannot allocate more than %d records", INT_MAX);
+
+    int nselected = nfields;
+    const int *requested = NULL;
+    if (r_selected_fields != R_NilValue) {
+        if (!Rf_isInteger(r_selected_fields) || Rf_length(r_selected_fields) < 1)
+            Rf_error("'cols' must be a non-empty integer vector or NULL");
+        nselected = Rf_length(r_selected_fields);
+        requested = INTEGER(r_selected_fields);
+    }
+
+    int *selected = (int *)R_alloc((size_t)nselected, sizeof(int));
+    for (int j = 0; j < nselected; j++) {
+        int field = requested ? requested[j] : j;
+        if (field < 0 || field >= nfields)
+            Rf_error("selected field index is out of bounds");
+        selected[j] = field;
+    }
+
+    size_t *field_offsets = (size_t *)R_alloc((size_t)nfields, sizeof(size_t));
+    size_t data_width = 0;
+    for (int i = 0; i < nfields; i++) {
+        field_offsets[i] = data_width;
+        data_width += (size_t)field_widths[i];
+    }
+    if (data_width + 1 > UINT16_MAX)
+        Rf_error("DBF record width is too large for the native engine");
+
+    SEXP columns = PROTECT(Rf_allocVector(VECSXP, nselected));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, nselected));
+    for (int j = 0; j < nselected; j++) {
+        SET_VECTOR_ELT(columns, j, Rf_allocVector(STRSXP, (R_xlen_t)nrecords));
+        SET_STRING_ELT(names, j, Rf_mkChar(field_names[selected[j]]));
+    }
+
+    native_read_ctx_t ctx;
+    ctx.columns = columns;
+    ctx.selected = selected;
+    ctx.field_offsets = field_offsets;
+    ctx.field_widths = field_widths;
+    ctx.nselected = nselected;
+    ctx.out_row = 0;
+
+    rc = dbc_read_records(in_path, (uint16_t)(data_width + 1), nrecords,
+                          native_record_cb, &ctx, err_buf, sizeof(err_buf));
+    if (rc != DBC_OK) {
+        UNPROTECT(2);
+        throw_dbc_error(rc, err_buf);
+    }
+
+    if (ctx.out_row != (R_xlen_t)nrecords) {
+        for (int j = 0; j < nselected; j++)
+            SET_VECTOR_ELT(columns, j,
+                           Rf_xlengthgets(VECTOR_ELT(columns, j), ctx.out_row));
+    }
+    Rf_setAttrib(columns, R_NamesSymbol, names);
+    Rf_setAttrib(columns, R_ClassSymbol, Rf_mkString("data.frame"));
+    SEXP row_names = PROTECT(Rf_allocVector(INTSXP, 2));
+    INTEGER(row_names)[0] = NA_INTEGER;
+    INTEGER(row_names)[1] = -(int)ctx.out_row;
+    Rf_setAttrib(columns, R_RowNamesSymbol, row_names);
+
+    UNPROTECT(3);
+    return columns;
 }
 
 /* ── C_dbc_inspect ────────────────────────────────────────────────────────── */

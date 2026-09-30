@@ -11,8 +11,10 @@ dbc_batch_to_csv(
   recursive = FALSE,
   batch_size = 4096L,
   encoding = NULL,
+  cols = NULL,
   overwrite = FALSE,
-  verbose = FALSE
+  verbose = FALSE,
+  workers = 1L
 )
 }
 \arguments{
@@ -32,10 +34,17 @@ Created when it does not exist.}
 \item{encoding}{Character string or \code{NULL}. Passed to
 \code{\link{dbc_to_csv}}.}
 
+\item{cols}{Character vector or \code{NULL}. Optional fields to write for
+every input file. Passed to \code{\link{dbc_to_csv}}.}
+
 \item{overwrite}{Logical. Replace existing CSV files? Default \code{FALSE}.}
 
 \item{verbose}{Logical. Print per-file conversion progress? Default
 \code{FALSE}.}
+
+\item{workers}{Positive integer. Number of files to convert concurrently on
+macOS and Linux. Defaults to \code{1L}. Windows uses sequential execution
+because \code{parallel::mclapply()} is not available there.}
 }
 \value{
 A data frame with one row per converted file and columns
@@ -50,7 +59,12 @@ directory layout beneath \code{input_dir} is preserved in
 \code{overwrite = TRUE}.
 }
 \examples{
-\dontrun{
-result <- dbc_batch_to_csv("data/dbc", "data/csv", recursive = TRUE)
-}
+input_dir <- tempfile("dbc-input-")
+output_dir <- tempfile("dbc-output-")
+dir.create(input_dir)
+file.copy(system.file("extdata", "sids.dbc", package = "dbcturbo"),
+          file.path(input_dir, "sids.dbc"))
+result <- dbc_batch_to_csv(input_dir, output_dir)
+result
+unlink(c(input_dir, output_dir), recursive = TRUE)
 }
