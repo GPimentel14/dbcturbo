@@ -2,6 +2,8 @@
   <img src="man/figures/dbcturbo.png" alt="dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files" width="100%">
 </p>
 
+# dbcturbo <img src="man/figures/logo.png" align="right" height="120" alt="dbcturbo hex logo" />
+
 <!-- badges: start -->
 [![CRAN status](https://www.r-pkg.org/badges/version/dbcturbo)](https://CRAN.R-project.org/package=dbcturbo)
 [![R-CMD-check](https://img.shields.io/badge/R--CMD--check-passing-success.svg)](https://github.com/GPimentel14/dbcturbo)
