@@ -7,10 +7,11 @@
 dbc_to_parquet(
   input_file,
   output_file,
-  batch_size = 8192L,
-  encoding = "CP850",
+  batch_size = 100000L,
+  encoding = "latin1",
   verbose = FALSE,
-  progress = NULL
+  progress = NULL,
+  cols = NULL
 )
 }
 \arguments{
@@ -18,26 +19,28 @@ dbc_to_parquet(
 
 \item{output_file}{Character string. Path for the output \code{.parquet} file.}
 
-\item{batch_size}{Integer. Passed to \code{\link{dbc_to_csv}}.
-Default \code{8192L}.}
+\item{batch_size}{Integer. Number of rows per streamed chunk / row group.
+Default \code{100000L}.}
 
 \item{encoding}{Character string. Source encoding of character fields.
-Default \code{"CP850"}.}
+Default \code{"latin1"}.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints file metrics,
 a progress bar, and elapsed time upon completion. Default \code{FALSE}.}
 
 \item{progress}{Function or \code{NULL}. Optional callback for progress reporting.}
+
+\item{cols}{Character vector or \code{NULL}. Names of columns to include in the
+Parquet file. \code{NULL} (default) writes all columns.}
 }
 \value{
 \code{TRUE} invisibly on success. Stops if the \pkg{arrow} package
   is not installed.
 }
 \description{
-A high-level convenience wrapper that first writes the \code{.dbc} file to
-a temporary CSV using the C engine, then converts that CSV into a
-\code{.parquet} file using the \pkg{arrow} package. It therefore requires
-temporary disk space for the CSV and is not an end-to-end streaming writer.
+Streams typed chunks directly from a \code{.dbc} file into a \code{.parquet}
+file using \code{\link{read_dbc_chunks}} and \pkg{arrow}'s
+\code{ParquetFileWriter}, without creating an intermediate temporary CSV file.
 }
 \details{
 This is the recommended workflow for Big Data and epidemiological research,

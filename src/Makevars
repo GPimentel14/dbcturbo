@@ -1,1 +1,3 @@
-# Empty — let R choose portable compilation flags
+# Default flags. Kept as a file so OpenMP can be enabled here if a future
+# change makes the record loop parallelisable (it is not: the PKWare Implode
+# decompressor that feeds it is inherently sequential).

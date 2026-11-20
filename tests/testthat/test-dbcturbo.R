@@ -46,6 +46,29 @@ test_that("dbc_to_csv produces a readable CSV", {
   expect_gte(length(lines), 2)   # at least header + 1 data row
 })
 
+test_that("dbc_to_parquet streams directly and preserves values", {
+  skip_if_not_installed("arrow")
+  sample_dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+  skip_if(!nzchar(sample_dbc), "Sample DBC file not found")
+  output <- tempfile(fileext = ".parquet")
+  on.exit(unlink(output), add = TRUE)
+  expected <- read_dbc(sample_dbc)
+  expect_true(dbc_to_parquet(sample_dbc, output, batch_size = 17L))
+  actual <- as.data.frame(arrow::read_parquet(output))
+  expect_identical(names(actual), names(expected))
+  expect_equal(nrow(actual), nrow(expected))
+  for (name in names(expected))
+    expect_equal(as.character(actual[[name]]), as.character(expected[[name]]))
+  # Overwriting an existing Parquet file should succeed
+  expect_true(dbc_to_parquet(sample_dbc, output, batch_size = 17L))
+  # Column selection in dbc_to_parquet
+  selected <- names(expected)[1:2]
+  expect_true(dbc_to_parquet(sample_dbc, output, cols = selected))
+  subset_actual <- as.data.frame(arrow::read_parquet(output))
+  expect_identical(names(subset_actual), selected)
+  expect_equal(nrow(subset_actual), nrow(expected))
+})
+
 test_that("read_dbc returns a data.frame with rows and columns", {
   sample_dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
   skip_if(!nzchar(sample_dbc), "Sample DBC file not found")

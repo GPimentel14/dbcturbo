@@ -401,6 +401,70 @@ test_that("type coercion handles DBF scalar representations", {
   )
 })
 
+test_that("read_dbc_chunks reproduces native read_dbc output", {
+  dbc <- .sample_dbc()
+  chunks <- list()
+  total <- read_dbc_chunks(
+    dbc,
+    chunk_size = 17L,
+    callback = function(x) chunks[[length(chunks) + 1L]] <<- x
+  )
+  combined <- do.call(rbind, chunks)
+  expected <- read_dbc(dbc, engine = "native")
+
+  expect_equal(total, nrow(expected))
+  expect_equal(combined, expected, ignore_attr = "row.names")
+  expect_equal(vapply(chunks, nrow, integer(1L)), c(rep(17L, 5L), 15L))
+})
+
+test_that("read_dbc_chunks validates callback and supports cols", {
+  dbc <- .sample_dbc()
+  selected <- dbc_inspect(dbc)$fields$name[1:2]
+  seen <- NULL
+  read_dbc_chunks(dbc, cols = selected, chunk_size = 200L,
+                  callback = function(x) seen <<- x)
+  expect_identical(names(seen), selected)
+  expect_error(read_dbc_chunks(dbc, callback = "bad"), "callback")
+})
+
+test_that("dbc_validate checks valid and corrupt DBC files", {
+  dbc <- .sample_dbc()
+  expect_true(dbc_validate(dbc, deep = TRUE))
+  expect_true(dbc_validate(dbc, deep = FALSE))
+
+  raw_bytes <- readBin(dbc, what = "raw", n = file.info(dbc)$size)
+  truncated <- tempfile(fileext = ".dbc")
+  on.exit(unlink(truncated), add = TRUE)
+  writeBin(raw_bytes[seq_len(min(length(raw_bytes), 64L))], truncated)
+  expect_error(dbc_validate(truncated, deep = FALSE))
+  expect_error(dbc_validate(truncated, deep = TRUE))
+
+  # Truncate inside the compressed payload so header check passes but deep fails
+  mid_trunc <- tempfile(fileext = ".dbc")
+  on.exit(unlink(mid_trunc), add = TRUE)
+  writeBin(raw_bytes[seq_len(floor(length(raw_bytes) * 0.7))], mid_trunc)
+  expect_true(dbc_validate(mid_trunc, deep = FALSE))
+  expect_error(dbc_validate(mid_trunc, deep = TRUE))
+})
+
+test_that("read_dbc supports n_max with early stop", {
+  dbc <- .sample_dbc()
+  full <- read_dbc(dbc, engine = "native")
+  head10 <- read_dbc(dbc, engine = "native", n_max = 10)
+  expect_equal(nrow(head10), 10L)
+  expect_equal(head10, full[1:10, , drop = FALSE], ignore_attr = "row.names")
+
+  empty <- read_dbc(dbc, engine = "native", n_max = 0)
+  expect_equal(nrow(empty), 0L)
+  expect_identical(names(empty), names(full))
+
+  raw10 <- read_dbc(dbc, engine = "native", coerce_types = FALSE, n_max = 10)
+  expect_equal(nrow(raw10), 10L)
+  expect_true(all(vapply(raw10, is.character, logical(1L))))
+
+  expect_error(read_dbc(dbc, n_max = -1), "n_max")
+})
+
 test_that("dbc_batch_to_csv converts a directory and preserves subdirectories", {
   input_dir <- tempfile("dbc-input-")
   output_dir <- tempfile("csv-output-")

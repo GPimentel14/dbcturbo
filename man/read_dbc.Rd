@@ -7,12 +7,13 @@
 read_dbc(
   file,
   batch_size = 4096L,
-  encoding = "CP850",
+  encoding = "latin1",
   verbose = FALSE,
   cols = NULL,
   coerce_types = TRUE,
   engine = c("auto", "native", "data.table", "base"),
-  native_threshold = 50 * 1024^2,
+  native_threshold = Inf,
+  n_max = Inf,
   ...
 )
 }
@@ -23,7 +24,8 @@ read_dbc(
 Default \code{4096L}.}
 
 \item{encoding}{Character string. Source encoding of character fields.
-Default \code{"CP850"} (standard DATASUS legacy encoding).}
+Default \code{"latin1"} (standard for modern DATASUS files; use
+\code{"CP850"} for older DOS-era files).}
 
 \item{verbose}{Logical. Passed to \code{\link{dbc_to_csv}}.
 Default \code{FALSE}.}
@@ -49,15 +51,19 @@ metadata:
 }}
 
 \item{engine}{Character string selecting the reader. \code{"auto"}
-(default) uses the native engine for files no larger than
-\code{native_threshold}, then \pkg{data.table} when installed and R base
-otherwise. \code{"native"} always uses direct native decoding;
-\code{"data.table"} requires \pkg{data.table}; \code{"base"} always
-uses \code{utils::read.csv()}.}
+(default) uses the native engine whenever no extra CSV-reader arguments are
+supplied; otherwise it falls back to \pkg{data.table} when installed and R
+base otherwise. \code{"native"} always uses direct native decoding;
+\code{"data.table"} requires \pkg{data.table}; \code{"base"} always uses
+\code{utils::read.csv()}.}
 
-\item{native_threshold}{Non-negative number of bytes. In \code{"auto"}
-mode, files at or below this size use the native engine. Defaults to
-50 MiB. Set to \code{0} to always use the CSV route in \code{"auto"}.}
+\item{native_threshold}{Non-negative number of bytes. In \code{"auto"} mode,
+files at or below this size use the native engine. Defaults to \code{Inf}
+(native for every size). Set to \code{0} to always use the CSV route.}
+
+\item{n_max}{Non-negative number. Maximum number of active (non-deleted)
+records to read. Defaults to \code{Inf} (read all records). In the native
+engine, decompression stops immediately once \code{n_max} rows are read.}
 
 \item{...}{Additional arguments forwarded to the CSV reader.}
 }
@@ -66,15 +72,16 @@ A \code{data.frame} or \code{data.table} (if \pkg{data.table}
   is installed).
 }
 \description{
-High-level convenience wrapper. The native engine decodes small files
-directly into R columns without temporary files. Larger files use a
-temporary CSV and \code{data.table::fread()} (if available) or
-\code{utils::read.csv()}.
+High-level convenience wrapper. By default the native engine decodes the
+whole file directly into R columns without temporary files, which is the
+fastest option at every file size. Set \code{engine} to \code{"data.table"}
+or \code{"base"}, or pass CSV-reader arguments through \code{...}, to use the
+temporary-CSV route instead.
 }
 \details{
-For files with more than one million records, use \code{\link{dbc_to_csv}}
-directly and load the resulting CSV with \code{arrow::read_csv_arrow()} or
-\code{data.table::fread()} for maximum performance.
+The native engine transcodes character fields to UTF-8 in C as it decodes,
+so its result is identical to the CSV engines without an extra R-side
+\code{iconv()} pass.
 }
 \examples{
 dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")

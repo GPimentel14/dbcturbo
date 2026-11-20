@@ -5,4 +5,5 @@
 ^dbcturbo_.*\.tar\.gz$
 ^.*\.pdf$
 ^dbcturbo\.png$
+^__pycache__$
 

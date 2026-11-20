@@ -1,3 +1,41 @@
+# dbcturbo 0.3.0
+
+## New features
+
+* `read_dbc_chunks()` streams a DBC file in memory-bounded data-frame chunks
+  passed to a user `callback`, with optional column selection (`cols`),
+  character encoding, and native type coercion.
+
+* `dbc_validate()` checks the structural integrity of a DBC file (embedded DBF
+  header, field descriptors, and file boundaries) and, with `deep = TRUE`,
+  decompresses the full payload to verify record counts, record markers, stream
+  termination, and absence of unexpected trailing data.
+
+## Performance and internal improvements
+
+* `read_dbc()` gains an `n_max` argument to stop decompression early after
+  reading the requested number of active records.
+
+* `read_dbc()` now performs type coercion and UTF-8 character transcoding
+  directly in C in the native engine, removing the extra R-side `iconv()` and
+  coercion passes. `native_threshold` now defaults to `Inf` so `engine = "auto"`
+  uses the native engine for all file sizes unless extra CSV-reader arguments
+  are supplied via `...`.
+
+* `dbc_to_parquet()` now streams typed chunks directly from `read_dbc_chunks()`
+  into `arrow::ParquetFileWriter` using an explicit DBF-derived Arrow schema,
+  avoiding the intermediate temporary CSV file. It also gains a `cols`
+  parameter for column selection, and the default `batch_size` is now `100000L`.
+
+* Default source `encoding` is now `"latin1"` (matching modern DATASUS files);
+  pass `encoding = "CP850"` for older DOS-era DATASUS files.
+
+* `dbc_to_csv()` now uses a 256 KB in-memory output buffer and bulk copies for
+  plain ASCII cells, reducing per-byte I/O overhead.
+
+* `dbc_inspect()` and `dbc_read_records()` perform stricter header alignment,
+  truncation, record marker, and trailing-data checks.
+
 # dbcturbo 0.2.0
 
 ## New features

@@ -11,13 +11,17 @@
 /* Forward declarations */
 SEXP C_dbc2dbf(SEXP, SEXP);
 SEXP C_dbc_to_csv(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-SEXP C_dbc_read_native(SEXP, SEXP);
+SEXP C_dbc_read_native(SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP C_dbc_read_chunks(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+SEXP C_dbc_validate(SEXP);
 SEXP C_dbc_inspect(SEXP);
 
 static const R_CallMethodDef CallEntries[] = {
     {"C_dbc2dbf",    (DL_FUNC) &C_dbc2dbf,    2},
     {"C_dbc_to_csv", (DL_FUNC) &C_dbc_to_csv, 6},
-    {"C_dbc_read_native", (DL_FUNC) &C_dbc_read_native, 2},
+    {"C_dbc_read_native", (DL_FUNC) &C_dbc_read_native, 5},
+    {"C_dbc_read_chunks", (DL_FUNC) &C_dbc_read_chunks, 6},
+    {"C_dbc_validate", (DL_FUNC) &C_dbc_validate, 1},
     {"C_dbc_inspect",(DL_FUNC) &C_dbc_inspect, 1},
     {NULL, NULL, 0}
 };

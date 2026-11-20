@@ -29,8 +29,18 @@ typedef struct {
 } dbf_header_t;
 
 typedef void (*dbc_progress_cb)(int64_t records_done, int64_t records_total, void *user_data);
+/* Return 0 to continue, DBC_CB_STOP (2) to stop cleanly, or another non-zero
+ * value to abort with an error. */
+#define DBC_CB_STOP 2
 typedef int (*dbc_record_cb)(const unsigned char *record, int64_t index,
                              void *user_data);
+
+/* Source encoding of DATASUS character fields. */
+typedef enum {
+    DBC_ENC_CP850  = 0,
+    DBC_ENC_LATIN1 = 1,
+    DBC_ENC_UTF8   = 2
+} dbc_encoding_t;
 
 typedef enum {
     DBC_OK              =  0,
@@ -70,6 +80,16 @@ dbc_error_t dbc_inspect(const char *input_path,
 dbc_error_t dbc_read_records(const char *input_path, uint16_t record_size,
                              uint32_t expected_records, dbc_record_cb record_cb,
                              void *user_data, char *error_buf, size_t error_buf_sz);
+
+/* Map an encoding name ("latin1", "CP850", "UTF-8", ...) to dbc_encoding_t.
+ * Unknown or NULL names fall back to DBC_ENC_LATIN1. */
+dbc_encoding_t dbc_encoding_from_name(const char *name);
+
+/* Transcode `len` bytes from `in` (source `enc`) to UTF-8, writing at most
+ * 3 * len bytes to `out`. `out` must be able to hold 3 * len bytes.
+ * Returns the number of UTF-8 bytes written. */
+size_t dbc_transcode_to_utf8(const unsigned char *in, int len, char *out,
+                             dbc_encoding_t enc);
 
 #ifdef __cplusplus
 }

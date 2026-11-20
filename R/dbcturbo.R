@@ -180,23 +180,59 @@ dbc_inspect <- function(input_file) {
   .Call("C_dbc_inspect", input_file)
 }
 
+#' Validate the structural integrity of a DATASUS DBC file
+#'
+#' Checks the embedded DBF header, field descriptors, record width, and file
+#' boundaries. With \code{deep = TRUE}, also decompresses the complete payload
+#' and verifies the declared record count, record markers, stream termination,
+#' and absence of unexpected trailing data. No data frame or temporary DBF file
+#' is created.
+#'
+#' This is a structural and decompression check. It does not compare the
+#' contents with an external reference dataset.
+#'
+#' @param file Character string. Path to the \code{.dbc} file.
+#' @param deep Logical. If \code{TRUE} (default), decompress and validate every
+#'   record. If \code{FALSE}, validate only the embedded DBF header.
+#'
+#' @return \code{TRUE} invisibly when the file passes validation. Invalid,
+#'   truncated, or corrupt files raise an error.
+#'
+#' @examples
+#' dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#' dbc_validate(dbc)
+#'
+#' @seealso \code{\link{dbc_inspect}}, \code{\link{read_dbc}}
+#' @export
+dbc_validate <- function(file, deep = TRUE) {
+  .assert_scalar_string(file, "file")
+  .assert_scalar_logical(deep, "deep")
+  file <- normalizePath(file, mustWork = TRUE)
+  if (deep) invisible(.Call("C_dbc_validate", file))
+  else {
+    dbc_inspect(file)
+    invisible(TRUE)
+  }
+}
 
 #' Read a DATASUS DBC file into an R data frame
 #'
-#' High-level convenience wrapper. The native engine decodes small files
-#' directly into R columns without temporary files. Larger files use a
-#' temporary CSV and \code{data.table::fread()} (if available) or
-#' \code{utils::read.csv()}.
+#' High-level convenience wrapper. By default the native engine decodes the
+#' whole file directly into R columns without temporary files, which is the
+#' fastest option at every file size. Set \code{engine} to \code{"data.table"}
+#' or \code{"base"}, or pass CSV-reader arguments through \code{...}, to use the
+#' temporary-CSV route instead.
 #'
-#' For files with more than one million records, use \code{\link{dbc_to_csv}}
-#' directly and load the resulting CSV with \code{arrow::read_csv_arrow()} or
-#' \code{data.table::fread()} for maximum performance.
+#' The native engine transcodes character fields to UTF-8 in C as it decodes,
+#' so its result is identical to the CSV engines without an extra R-side
+#' \code{iconv()} pass.
 #'
 #' @param file       Character string. Path to the \code{.dbc} file.
 #' @param batch_size Integer. Passed to \code{\link{dbc_to_csv}}.
 #'   Default \code{4096L}.
 #' @param encoding   Character string. Source encoding of character fields.
-#'   Default \code{"CP850"} (standard DATASUS legacy encoding).
+#'   Default \code{"latin1"} (standard for modern DATASUS files; use
+#'   \code{"CP850"} for older DOS-era files).
 #' @param verbose    Logical. Passed to \code{\link{dbc_to_csv}}.
 #'   Default \code{FALSE}.
 #' @param cols       Character vector or \code{NULL}. Names of the columns to
@@ -218,14 +254,17 @@ dbc_inspect <- function(input_file) {
 #'     \item \code{C} (character) → unchanged.
 #'   }
 #' @param engine Character string selecting the reader. \code{"auto"}
-#'   (default) uses the native engine for files no larger than
-#'   \code{native_threshold}, then \pkg{data.table} when installed and R base
-#'   otherwise. \code{"native"} always uses direct native decoding;
-#'   \code{"data.table"} requires \pkg{data.table}; \code{"base"} always
-#'   uses \code{utils::read.csv()}.
-#' @param native_threshold Non-negative number of bytes. In \code{"auto"}
-#'   mode, files at or below this size use the native engine. Defaults to
-#'   50 MiB. Set to \code{0} to always use the CSV route in \code{"auto"}.
+#'   (default) uses the native engine whenever no extra CSV-reader arguments are
+#'   supplied; otherwise it falls back to \pkg{data.table} when installed and R
+#'   base otherwise. \code{"native"} always uses direct native decoding;
+#'   \code{"data.table"} requires \pkg{data.table}; \code{"base"} always uses
+#'   \code{utils::read.csv()}.
+#' @param native_threshold Non-negative number of bytes. In \code{"auto"} mode,
+#'   files at or below this size use the native engine. Defaults to \code{Inf}
+#'   (native for every size). Set to \code{0} to always use the CSV route.
+#' @param n_max Non-negative number. Maximum number of active (non-deleted)
+#'   records to read. Defaults to \code{Inf} (read all records). In the native
+#'   engine, decompression stops immediately once \code{n_max} rows are read.
 #' @param ...        Additional arguments forwarded to the CSV reader.
 #'
 #' @return A \code{data.frame} or \code{data.table} (if \pkg{data.table}
@@ -244,20 +283,23 @@ dbc_inspect <- function(input_file) {
 #' @export
 read_dbc <- function(file,
                      batch_size    = 4096L,
-                     encoding      = "CP850",
+                     encoding      = "latin1",
                      verbose       = FALSE,
                      cols          = NULL,
                      coerce_types  = TRUE,
                      engine        = c("auto", "native", "data.table", "base"),
-                     native_threshold = 50 * 1024^2,
+                     native_threshold = Inf,
+                     n_max         = Inf,
                      ...) {
 
   .assert_scalar_logical(verbose, "verbose")
   .assert_scalar_logical(coerce_types, "coerce_types")
   if (!is.null(encoding)) .assert_scalar_string(encoding, "encoding")
   if (!is.numeric(native_threshold) || length(native_threshold) != 1L ||
-      is.na(native_threshold) || !is.finite(native_threshold) || native_threshold < 0)
-    stop("'native_threshold' must be a non-negative finite number of bytes")
+      is.na(native_threshold) || native_threshold < 0)
+    stop("'native_threshold' must be a non-negative number of bytes (use Inf for no limit)")
+  if (!is.numeric(n_max) || length(n_max) != 1L || is.na(n_max) || n_max < 0)
+    stop("'n_max' must be a non-negative number (use Inf for all records)")
   engine <- match.arg(engine)
   .assert_scalar_string(file, "file")
   file <- normalizePath(file, mustWork = TRUE)
@@ -278,7 +320,7 @@ read_dbc <- function(file,
     stop("additional CSV-reader arguments in '...' are not supported by the native engine")
 
   meta <- NULL
-  if (coerce_types || !is.null(cols) || use_native) {
+  if ((!use_native && coerce_types) || !is.null(cols)) {
     meta <- tryCatch(dbc_inspect(file), error = function(e) NULL)
   }
 
@@ -292,20 +334,9 @@ read_dbc <- function(file,
 
   if (use_native) {
     selected_fields <- if (is.null(cols)) NULL else as.integer(match(cols, meta$fields$name) - 1L)
-    df <- .Call("C_dbc_read_native", file, selected_fields)
-
-    # Native C output preserves source bytes; transcode text fields to UTF-8
-    # in R so its public result matches the CSV route.
-    if (!is.null(meta)) {
-      source_encoding <- if (is.null(encoding)) "CP850" else encoding
-      active <- if (is.null(cols)) meta$fields else meta$fields[match(cols, meta$fields$name), ]
-      for (i in seq_len(nrow(active))) {
-        if (active$type[i] == "C" && active$name[i] %in% names(df)) {
-          df[[active$name[i]]] <- iconv(df[[active$name[i]]], from = source_encoding,
-                                         to = "UTF-8", sub = "byte")
-        }
-      }
-    }
+    # The C engine transcodes character fields to UTF-8 while decoding, so the
+    # result already matches the CSV route without a second R-side iconv pass.
+    df <- .Call("C_dbc_read_native", file, selected_fields, coerce_types, encoding, as.double(n_max))
   } else {
     # ── Stream DBC → temp CSV ──────────────────────────────────────────────────
     tmp <- tempfile(fileext = ".csv")
@@ -337,9 +368,13 @@ read_dbc <- function(file,
     )
 
     if (use_data_table) {
+      if (is.finite(n_max) && !("nrows" %in% names(extra_args)))
+        extra_args$nrows <- as.integer(n_max)
       read_args <- c(list(input = tmp, encoding = "UTF-8", select = cols), extra_args)
       df <- do.call(data.table::fread, read_args)
     } else {
+      if (is.finite(n_max) && !("nrows" %in% names(extra_args)))
+        extra_args$nrows <- as.integer(n_max)
       read_args <- c(list(file = tmp, fileEncoding = "UTF-8", stringsAsFactors = FALSE), extra_args)
       df <- do.call(utils::read.csv, read_args)
       if (!is.null(cols))
@@ -348,7 +383,7 @@ read_dbc <- function(file,
   }
 
   # ── Type coercion ─────────────────────────────────────────────────────────
-  if (coerce_types && !is.null(meta)) {
+  if (coerce_types && !is.null(meta) && !use_native) {
     active_fields <- if (!is.null(cols)) {
       meta$fields[meta$fields$name %in% cols, ]
     } else {
@@ -369,6 +404,64 @@ read_dbc <- function(file,
   df
 }
 
+
+#' Read a DATASUS DBC file in memory-bounded chunks
+#'
+#' Streams a DBC file once and calls \code{callback} with each data-frame
+#' chunk. A chunk is no longer retained by dbcturbo after the callback returns,
+#' so memory use is approximately proportional to \code{chunk_size} unless the
+#' callback stores the chunks.
+#'
+#' @param file Character string. Path to the DBC file.
+#' @param callback Function called with one data frame per chunk.
+#' @param chunk_size Positive integer. Maximum number of non-deleted records per
+#'   chunk. Defaults to \code{100000L}.
+#' @param encoding Source encoding for character fields. Defaults to
+#'   \code{"latin1"}.
+#' @param cols Character vector or \code{NULL}. Fields to include.
+#' @param coerce_types Logical. Convert DBF numeric, logical, and date fields to
+#'   native R types. Defaults to \code{TRUE}.
+#'
+#' @return Total number of delivered rows, invisibly.
+#'
+#' @examples
+#' dbc <- system.file("extdata", "sids.dbc", package = "dbcturbo")
+#' rows <- 0L
+#' read_dbc_chunks(dbc, chunk_size = 25L, callback = function(x) {
+#'   rows <<- rows + nrow(x)
+#' })
+#' rows
+#'
+#' @seealso \code{\link{read_dbc}}, \code{\link{dbc_validate}}
+#' @export
+read_dbc_chunks <- function(file, callback, chunk_size = 100000L,
+                            encoding = "latin1", cols = NULL,
+                            coerce_types = TRUE) {
+  .assert_scalar_string(file, "file")
+  .assert_scalar_logical(coerce_types, "coerce_types")
+  chunk_size <- .assert_positive_integer(chunk_size, "chunk_size")
+  if (!is.function(callback))
+    stop("'callback' must be a function")
+  if (!is.null(encoding))
+    .assert_scalar_string(encoding, "encoding")
+  if (!is.null(cols) &&
+      (!is.character(cols) || !length(cols) || anyNA(cols)))
+    stop("'cols' must be a non-empty character vector of field names, or NULL")
+
+  file <- normalizePath(file, mustWork = TRUE)
+  selected_fields <- NULL
+  if (!is.null(cols)) {
+    fields <- dbc_inspect(file)$fields$name
+    unknown <- setdiff(cols, fields)
+    if (length(unknown))
+      stop("Unknown column(s): ", paste(unknown, collapse = ", "))
+    selected_fields <- as.integer(match(cols, fields) - 1L)
+  }
+
+  total <- .Call("C_dbc_read_chunks", file, selected_fields, coerce_types,
+                 encoding, chunk_size, callback)
+  invisible(total)
+}
 
 #' Convert all DBC files in a directory to CSV files
 #'
@@ -499,10 +592,12 @@ dbc_batch_to_csv <- function(input_dir, output_dir,
 #'
 #' @param input_file  Character string. Path to the source \code{.dbc} file.
 #' @param output_file Character string. Path for the output \code{.parquet} file.
-#' @param batch_size  Integer. Passed to \code{\link{dbc_to_csv}}.
-#'   Default \code{8192L}.
+#' @param batch_size  Integer. Number of rows per streamed chunk / row group.
+#'   Default \code{100000L}.
 #' @param encoding    Character string. Source encoding of character fields.
-#'   Default \code{"CP850"}.
+#'   Default \code{"latin1"}.
+#' @param cols        Character vector or \code{NULL}. Names of columns to
+#'   include in the Parquet file. \code{NULL} (default) writes all columns.
 #' @param verbose     Logical. If \code{TRUE}, prints file metrics,
 #'   a progress bar, and elapsed time upon completion. Default \code{FALSE}.
 #' @param progress    Function or \code{NULL}. Optional callback for progress reporting.
@@ -522,13 +617,15 @@ dbc_batch_to_csv <- function(input_dir, output_dir,
 #' }
 #'
 #' @export
-dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding = "CP850", verbose = FALSE, progress = NULL) {
+dbc_to_parquet <- function(input_file, output_file, batch_size = 100000L, encoding = "latin1", verbose = FALSE, progress = NULL, cols = NULL) {
   .assert_scalar_string(input_file, "input_file")
   .assert_scalar_string(output_file, "output_file")
   batch_size <- .assert_positive_integer(batch_size, "batch_size")
   .assert_scalar_logical(verbose, "verbose")
 
   if (!is.null(encoding)) .assert_scalar_string(encoding, "encoding")
+  if (!is.null(cols) && (!is.character(cols) || !length(cols) || anyNA(cols)))
+    stop("'cols' must be a non-empty character vector of field names, or NULL")
   if (!is.null(progress) && !is.function(progress))
     stop("'progress' must be a function or NULL")
 
@@ -548,18 +645,80 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding
 
   input_file <- normalizePath(input_file, mustWork = TRUE)
 
-  # 1. Create a fast temporary CSV
-  tmp_csv <- tempfile(fileext = ".csv")
-  on.exit(unlink(tmp_csv), add = TRUE)
+  # Column types come from the DBF field descriptors and match the typed
+  # chunks produced by the native reader.
+  meta <- dbc_inspect(input_file)
+  active_fields <- meta$fields
+  if (!is.null(cols)) {
+    unknown <- setdiff(cols, meta$fields$name)
+    if (length(unknown))
+      stop("Unknown column(s): ", paste(unknown, collapse = ", "))
+    active_fields <- meta$fields[match(cols, meta$fields$name), , drop = FALSE]
+  }
+  schema <- .arrow_schema_from_fields(active_fields)
 
-  # 2. Extract data using our C streaming engine with progress callback
-  dbc_to_csv(input_file, tmp_csv, batch_size = batch_size, encoding = encoding, verbose = verbose, progress = progress, output_display = basename(output_file))
+  output_dir <- dirname(output_file)
+  if (!dir.exists(output_dir))
+    stop("output directory does not exist: ", output_dir)
+  tmp_output <- tempfile(paste0(".", basename(output_file), "-"),
+                         tmpdir = output_dir, fileext = ".parquet")
+  on.exit(if (file.exists(tmp_output)) unlink(tmp_output), add = TRUE)
 
-  # 3. Read the temporary CSV with arrow and save as Parquet
-  # read_csv_arrow is extremely fast and handles type inference automatically
-  df_arrow <- arrow::read_csv_arrow(tmp_csv)
-  arrow::write_parquet(df_arrow, output_file)
+  sink <- arrow::FileOutputStream$create(tmp_output)
+  properties <- arrow::ParquetWriterProperties$create(schema$names)
+  writer <- arrow::ParquetFileWriter$create(
+    schema, sink, properties = properties
+  )
+  writer_open <- TRUE
+  sink_open <- TRUE
+  on.exit({
+    if (writer_open) try(writer$Close(), silent = TRUE)
+    if (sink_open) try(sink$close(), silent = TRUE)
+  }, add = TRUE)
 
+  written <- 0L
+  started <- proc.time()[["elapsed"]]
+  progress_bar <- NULL
+  if (verbose) {
+    progress_bar <- utils::txtProgressBar(min = 0, max = max(meta$nrecords, 1L), style = 3)
+    on.exit(try(close(progress_bar), silent = TRUE), add = TRUE)
+  }
+
+  write_chunk <- function(chunk) {
+    rows <- nrow(chunk)
+    if (rows > 0L) {
+      table <- arrow::Table$create(chunk, schema = schema)
+      writer$WriteTable(table, rows)
+      written <<- written + rows
+    }
+    if (!is.null(progress)) progress(written, meta$nrecords)
+    if (!is.null(progress_bar))
+      utils::setTxtProgressBar(progress_bar, min(written, meta$nrecords))
+    invisible(NULL)
+  }
+
+  delivered <- read_dbc_chunks(
+    input_file, callback = write_chunk, chunk_size = batch_size,
+    encoding = encoding, cols = cols, coerce_types = TRUE
+  )
+  if (!identical(as.double(delivered), as.double(written)))
+    stop("internal error: delivered and written row counts differ")
+
+  writer$Close()
+  writer_open <- FALSE
+  sink$close()
+  sink_open <- FALSE
+
+  if (file.exists(output_file) && unlink(output_file) != 0L)
+    stop("cannot replace existing Parquet file at ", output_file)
+  if (!file.rename(tmp_output, output_file))
+    stop("cannot move completed Parquet file to ", output_file)
+
+  if (verbose) {
+    elapsed <- proc.time()[["elapsed"]] - started
+    message("Wrote ", format(written, big.mark = ","), " rows to ",
+            basename(output_file), " in ", sprintf("%.2f", elapsed), " s")
+  }
   invisible(TRUE)
 }
 
@@ -571,6 +730,28 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 8192L, encoding
   if (bytes < 1024^2) return(sprintf("%.1f KB", bytes / 1024))
   if (bytes < 1024^3) return(sprintf("%.1f MB", bytes / 1024^2))
   return(sprintf("%.2f GB", bytes / 1024^3))
+}
+
+
+# -- Arrow schema from DBF metadata (not exported) -----------------------------
+# Maps DBF field descriptors to an arrow::Schema so CSV parsing uses the DBF's
+# declared types instead of unreliable block-wise inference. Character fields
+# are kept as UTF-8 strings, preserving bytes exactly.
+.arrow_schema_from_fields <- function(fields) {
+  field_type <- function(type, decimals) {
+    if (type == "N") {
+      if (decimals > 0L) arrow::float64() else arrow::int64()
+    } else if (type == "D") {
+      arrow::date32()
+    } else if (type == "L") {
+      arrow::boolean()
+    } else {
+      arrow::string()
+    }
+  }
+  do.call(arrow::schema,
+          Map(function(nm, ty, dec) arrow::field(nm, field_type(ty, dec)),
+              fields$name, fields$type, fields$decimals))
 }
 
 

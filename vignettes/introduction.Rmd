@@ -47,16 +47,37 @@ cat("Columns:", nrow(meta$fields), "\n")
 print(meta$fields)
 ```
 
-### 2. Read directly into a data frame (small to medium files)
+### 2. Read directly into a data frame (or preview with `n_max`)
 
-For files up to ~2 million records, load directly into R:
+`read_dbc()` decodes, types, and transcodes directly in C without temporary
+files. Use `n_max` to stop decompression early when previewing large files, or
+`cols` to read only selected columns:
 
 ```r
 library(dbcturbo)
 
-df <- read_dbc("DENGBR23.dbc")
+# Instant preview of the first 100 rows (stops decompression early)
+preview <- read_dbc("DENGBR23.dbc", n_max = 100)
+
+# Read the full dataset (or only specific columns)
+df <- read_dbc("DENGBR23.dbc", cols = c("DT_NOTIFIC", "SG_UF_NOT", "NU_IDADE_N"))
 head(df)
 dim(df)
+```
+
+For files too large to materialize at once, process them in memory-bounded
+chunks with `read_dbc_chunks()`, or verify file integrity without allocating a
+data frame using `dbc_validate()`:
+
+```r
+# Stream 100,000 rows at a time with bounded memory
+total <- 0L
+read_dbc_chunks("DENGBR23.dbc", chunk_size = 100000L, callback = function(chunk) {
+  total <<- total + nrow(chunk)
+})
+
+# Validate header and full compressed stream
+dbc_validate("DENGBR23.dbc", deep = TRUE)
 ```
 
 ### 3. Working with large files that exceed Excel's row limit
@@ -104,7 +125,7 @@ dbc_to_csv(
   input_file  = "DENGBR23.dbc",
   output_file = "dengue_2023.csv",
   batch_size  = 10000L,   # records per batch
-  encoding    = "CP850"   # standard DATASUS legacy encoding
+  encoding    = "latin1"  # default for modern DATASUS files (use "CP850" for legacy DOS files)
 )
 ```
 
@@ -113,9 +134,12 @@ display of Portuguese characters (ã, ç, é, etc.) in Excel and other tools.
 
 ### 5. Convert to Parquet (recommended for Big Data)
 
-Parquet is a convenient format for large epidemiological datasets. `dbc_to_parquet()` first writes a temporary CSV and then converts it with `arrow`, so it requires temporary disk space and is not an end-to-end streaming writer:
+Parquet is ideal for large epidemiological datasets. `dbc_to_parquet()` streams
+typed chunks directly from `read_dbc_chunks()` into `arrow::ParquetFileWriter`
+using an explicit DBF-derived schema — with **no intermediate CSV file**:
 - Compressed (3–5× smaller than CSV)
 - Columnar (fast for analytical queries)
+- Supports column projection via `cols`
 - Compatible with R (`arrow`), Python (`pandas`, `polars`), Power BI, DuckDB
 
 ```r
@@ -123,7 +147,8 @@ library(dbcturbo)
 
 dbc_to_parquet(
   input_file  = "DENGBR23.dbc",
-  output_file = "dengue_2023.parquet"   # must end in .parquet
+  output_file = "dengue_2023.parquet",  # must end in .parquet
+  cols        = c("DT_NOTIFIC", "SG_UF_NOT", "NU_IDADE_N")
 )
 
 # Read it back in R
@@ -176,17 +201,13 @@ result <- dbc_batch_to_csv(
 
 ### Working with dates
 
-DATASUS stores dates as character strings in `YYYYMMDD` format (e.g., `"20240115"`).
-Convert them to proper R `Date` objects for analysis:
+By default (`coerce_types = TRUE`), `read_dbc()` automatically converts DBF date
+fields (`D`, stored as `YYYYMMDD`) into native R `Date` objects:
 
 ```r
 library(dbcturbo)
 
 df <- read_dbc("DENGBR23.dbc")
-
-# Convert notification and symptom onset dates
-df$DT_NOTIFIC <- as.Date(df$DT_NOTIFIC, format = "%Y%m%d")
-df$DT_SIN_PRI <- as.Date(df$DT_SIN_PRI, format = "%Y%m%d")
 
 # Calculate notification delay (days between symptom onset and notification)
 df$delay_days <- as.numeric(df$DT_NOTIFIC - df$DT_SIN_PRI)
@@ -234,12 +255,9 @@ df$age_group <- cut(df$age_years,
 
 ### Handling missing values
 
-DATASUS often uses empty strings (`""`) instead of `NA`. Convert them:
+Blank DBF fields are automatically returned as `NA` by `read_dbc()`:
 
 ```r
-# Replace all empty strings with NA across the entire data frame
-df[df == ""] <- NA
-
 # Check missing data per column
 missing_pct <- sort(colMeans(is.na(df)) * 100, decreasing = TRUE)
 print(round(missing_pct[missing_pct > 0], 1))

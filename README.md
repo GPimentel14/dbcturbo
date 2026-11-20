@@ -10,20 +10,20 @@
 [![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html)
 <!-- badges: end -->
 
-**dbcturbo** is an R package to inspect, read, and convert DATASUS `.dbc` files, with direct streaming CSV/DBF conversion and UTF-8 CSV output.
+**dbcturbo** is an R package to inspect, validate, read, and convert DATASUS `.dbc` files, with a pure C99 streaming engine for direct native reading, chunked streaming, UTF-8 CSV/DBF export, and direct streaming Parquet conversion.
 
-The C99 engine writes CSV rows directly from the decompression stream with bounded memory. `read_dbc()` uses a direct native reader for files up to 50 MiB by default and a CSV reader for larger files; it intentionally materializes its final data frame in memory. `dbc_to_parquet()` uses a temporary CSV before conversion with Arrow.
+The C99 engine decodes and transcodes records directly from the decompression stream with bounded memory. `read_dbc()` uses the native C reader by default for every file size (with optional early stop via `n_max`), `read_dbc_chunks()` streams memory-bounded chunks to a user callback, and `dbc_to_parquet()` writes directly to Parquet via Arrow without creating an intermediate CSV file.
 
 ---
 
 ## ⚡ Why dbcturbo?
 
 - **Reads files with millions of records:** Process complete national databases (1.6M+ rows) in seconds.
-- **Streaming architecture:** True chunk-by-chunk decompress and write cycle — peak RAM never grows with file size during CSV/DBF conversion.
-- **Small-file fast path:** Native decoding avoids CSV and DBF temporary files for low-latency reads.
-- **Bounded conversion memory:** CSV/DBF conversion keeps only one DBF record and its output buffer in memory.
-- **Clean UTF-8 output:** Automatic CP850/Latin1 transcoding with UTF-8 BOM — Portuguese characters (`ã`, `ç`, `é`) render perfectly in Excel.
-- **Parquet conversion:** Converts through a temporary CSV using `arrow`.
+- **Streaming architecture:** True chunk-by-chunk decompress and write cycle — peak RAM never grows with file size during CSV/DBF/Parquet conversion or `read_dbc_chunks()`.
+- **Direct native C reader:** `read_dbc()` decodes, types, and transcodes directly in C without temporary CSV or DBF files, and supports `n_max` early stopping in ~1 ms.
+- **Structural validation:** `dbc_validate()` checks DBF headers and (with `deep = TRUE`) verifies the complete compressed stream without allocating a data frame.
+- **Clean UTF-8 output:** Automatic Latin1 (default) / CP850 transcoding with UTF-8 BOM — Portuguese characters (`ã`, `ç`, `é`) render perfectly in Excel.
+- **Direct Parquet streaming:** Streams typed chunks straight to Parquet using `arrow`, with column selection (`cols`) and no temporary CSV.
 - **Thread-safe conversion engine:** No global mutable C state; callers control any parallelism.
 - **Pure C99 & cross-platform:** Zero external C library dependencies — compiles out of the box on Linux, macOS, and Windows.
 
@@ -33,14 +33,14 @@ The C99 engine writes CSV rows directly from the decompression stream with bound
 
 | Feature | `dbcturbo` | `read.dbc` |
 |:---|:---:|:---:|
-| **Streaming conversion in batches** | ✅ | ❌ |
-| **Clean UTF-8 output with BOM** | ✅ | ❌ |
-| **Parquet conversion via Arrow** | ✅ | ❌ |
-| **Direct CSV export** | ✅ | ❌ |
-| **Inspect metadata without decompressing** | ✅ | ❌ |
-| **Directory batch conversion** | ✅ | ❌ |
-| **Thread-safe C99 engine** | ✅ | ❌ |
-| **Bounded-memory CSV/DBF conversion** | ✅ | ❌ |
+| **Direct native C99 reader (with `n_max` early stop)** | ✅ | ❌ |
+| **Memory-bounded chunked streaming (`read_dbc_chunks`)** | ✅ | ❌ |
+| **Direct streaming Parquet via Arrow (no temp CSV)** | ✅ | ❌ |
+| **Direct streaming CSV export (256 KB buffer, UTF-8 BOM)** | ✅ | ❌ |
+| **Header inspection & deep stream validation (`dbc_validate`)** | ✅ | ❌ |
+| **Column projection in C (`cols`)** | ✅ | ❌ |
+| **Directory batch conversion (`dbc_batch_to_csv`)** | ✅ | ❌ |
+| **Thread-safe pure C99 engine (zero required deps)** | ✅ | ❌ |
 
 ---
 
@@ -95,15 +95,25 @@ meta <- dbc_inspect("DENGBR23.dbc")
 cat("Records:", meta$nrecords, "| Columns:", nrow(meta$fields), "\n")
 #> Records: 1,645,956 | Columns: 121
 
-# Small files use the native C reader automatically (up to 50 MiB)
-df <- read_dbc("small_file.dbc")
+# Read directly into R with the native C engine (all file sizes by default)
+df <- read_dbc("DENGBR23.dbc")
 head(df)
+
+# Preview the first 100 rows in ~1 ms (early decompression stop)
+preview <- read_dbc("DENGBR23.dbc", n_max = 100)
+
+# Process huge files in memory-bounded chunks
+total_rows <- 0L
+read_dbc_chunks("DENGBR23.dbc", chunk_size = 100000L, callback = function(chunk) {
+  total_rows <<- total_rows + nrow(chunk)
+})
+
+# Validate structural integrity without allocating a data frame
+dbc_validate("DENGBR23.dbc", deep = TRUE)
 ```
 
-For large files, install the optional `data.table` package. `read_dbc()` will
-use it automatically above the native threshold, or request it explicitly with
-`engine = "data.table"`; use `engine = "native"` to force direct native
-decoding and `engine = "base"` to force R's built-in reader.
+If you prefer the temporary-CSV route (e.g., to forward custom `data.table::fread()`
+arguments), pass `engine = "data.table"` or `engine = "base"`.
 
 ```r
 install.packages("data.table")
@@ -152,13 +162,14 @@ dbc_to_csv(
 )
 ```
 
-### 3. 🗜️ Parquet — Conversion through a temporary CSV
+### 3. 🗜️ Parquet — Direct streaming via Arrow (no temporary CSV)
 
-Parquet is columnar and convenient to query with R (`arrow`), Python (`pandas`, `polars`), Power BI, and DuckDB. The conversion first creates a temporary CSV, so ensure enough temporary disk space is available.
+Parquet is columnar and convenient to query with R (`arrow`), Python (`pandas`, `polars`), Power BI, and DuckDB. `dbc_to_parquet()` streams typed chunks directly into `arrow::ParquetFileWriter` without writing an intermediate CSV file.
 
 ```r
 library(dbcturbo)
-dbc_to_parquet("DENGBR23.dbc", "dengue_2023.parquet")
+dbc_to_parquet("DENGBR23.dbc", "dengue_2023.parquet",
+               cols = c("DT_NOTIFIC", "SG_UF_NOT", "NU_IDADE_N"))
 ```
 
 > ⚠️ **Always use `.parquet` as the output extension.** Passing a `.csv` path to `dbc_to_parquet()` will raise an informative error.
@@ -273,7 +284,7 @@ dbDisconnect(con)
 ## 📚 Documentation
 
 - Full vignette: `vignette("introduction", package = "dbcturbo")`
-- Function reference: `?dbc_to_csv`, `?dbc_to_parquet`, `?read_dbc`, `?dbc_inspect`
+- Function reference: `?read_dbc`, `?read_dbc_chunks`, `?dbc_to_csv`, `?dbc_batch_to_csv`, `?dbc_to_parquet`, `?dbc2dbf`, `?dbc_inspect`, `?dbc_validate`
 
 ---
 
@@ -286,7 +297,7 @@ If you use `dbcturbo` in your research or institutional pipelines, please cite i
   title  = {dbcturbo: High-Performance Streaming Reader for DATASUS DBC Files},
   author = {Gumercindo {Pimentel Peralta} and Juliana {da Silva}},
   year   = {2026},
-  note   = {R package version 0.2.0},
+  note   = {R package version 0.3.0},
   url    = {https://github.com/GPimentel14/dbcturbo},
 }
 ```

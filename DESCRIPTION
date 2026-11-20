@@ -1,8 +1,8 @@
 Package: dbcturbo
 Type: Package
 Title: High-Performance Streaming Reader for 'DATASUS' DBC Files
-Version: 0.2.0
-Date: 2026-09-30
+Version: 0.3.0
+Date: 2026-11-20
 Authors@R: c(
     person("Gumercindo", "Pimentel Peralta", email = "gumercindopimentel@gmail.com", 
            role = c("aut", "cre"), comment = c(ORCID = "0000-0002-5896-3171")),
