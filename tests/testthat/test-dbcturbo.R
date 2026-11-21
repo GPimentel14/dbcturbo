@@ -54,7 +54,7 @@ test_that("dbc_to_parquet streams directly and preserves values", {
   on.exit(unlink(output), add = TRUE)
   expected <- read_dbc(sample_dbc)
   expect_true(dbc_to_parquet(sample_dbc, output, batch_size = 17L))
-  actual <- as.data.frame(arrow::read_parquet(output))
+  actual <- as.data.frame(arrow::read_parquet(output, mmap = FALSE))
   expect_identical(names(actual), names(expected))
   expect_equal(nrow(actual), nrow(expected))
   for (name in names(expected))
@@ -64,7 +64,7 @@ test_that("dbc_to_parquet streams directly and preserves values", {
   # Column selection in dbc_to_parquet
   selected <- names(expected)[1:2]
   expect_true(dbc_to_parquet(sample_dbc, output, cols = selected))
-  subset_actual <- as.data.frame(arrow::read_parquet(output))
+  subset_actual <- as.data.frame(arrow::read_parquet(output, mmap = FALSE))
   expect_identical(names(subset_actual), selected)
   expect_equal(nrow(subset_actual), nrow(expected))
 })

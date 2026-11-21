@@ -1,3 +1,15 @@
+## Resubmission
+
+This is a resubmission of `dbcturbo 0.3.0`. In this resubmission I fixed the
+Windows-only test failure in `tests/testthat/test-dbcturbo.R` (line 63):
+
+* `arrow::read_parquet()` memory-maps files by default on Windows (`mmap = TRUE`),
+  keeping a file handle open until garbage collection and preventing `unlink()`
+  from replacing the file immediately afterward.
+* Updated `dbc_to_parquet()` to run `gc()` and retry `unlink()` if an existing
+  Parquet target cannot be unlinked immediately, and passed `mmap = FALSE` in
+  `tests/testthat/test-dbcturbo.R` before testing overwrite behavior.
+
 ## Release 0.3.0
 
 In this version I have:

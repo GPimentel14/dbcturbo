@@ -709,8 +709,12 @@ dbc_to_parquet <- function(input_file, output_file, batch_size = 100000L, encodi
   sink$close()
   sink_open <- FALSE
 
-  if (file.exists(output_file) && unlink(output_file) != 0L)
-    stop("cannot replace existing Parquet file at ", output_file)
+  if (file.exists(output_file) && unlink(output_file) != 0L) {
+    # Release any lingering memory-mapped file handles (e.g. arrow on Windows)
+    gc(verbose = FALSE)
+    if (unlink(output_file) != 0L)
+      stop("cannot replace existing Parquet file at ", output_file)
+  }
   if (!file.rename(tmp_output, output_file))
     stop("cannot move completed Parquet file to ", output_file)
 
